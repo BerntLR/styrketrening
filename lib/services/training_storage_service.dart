@@ -66,7 +66,7 @@ class TrainingStorageService {
     exercises.removeWhere((e) => e.id == id);
     await saveExercises(exercises);
 
-    // Optionally also remove sessions for this exercise
+    // Also remove sessions for this exercise
     final sessions = await loadSessions();
     final filtered =
         sessions.where((s) => s.exerciseId != id).toList();
@@ -102,6 +102,22 @@ class TrainingStorageService {
     sessions.add(session);
     await saveSessions(sessions);
     return session;
+  }
+
+  Future<void> updateSession(ExerciseSession updated) async {
+    final sessions = await loadSessions();
+    final index = sessions.indexWhere((s) => s.id == updated.id);
+    if (index == -1) {
+      return;
+    }
+    sessions[index] = updated;
+    await saveSessions(sessions);
+  }
+
+  Future<void> deleteSession(String sessionId) async {
+    final sessions = await loadSessions();
+    sessions.removeWhere((s) => s.id == sessionId);
+    await saveSessions(sessions);
   }
 
   Future<List<ExerciseSession>> getSessionsForExercise(
