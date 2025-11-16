@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/training_models.dart';
@@ -30,6 +31,14 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     (_) => TextEditingController(),
   );
 
+  // --- Timer state ---
+  Timer? _timer;
+  int _remainingSeconds = 60;
+  bool _isTimerRunning = false;
+
+  // --- Which set are we on (1, 2, 3) ---
+  int _currentSet = 1;
+
   @override
   void initState() {
     super.initState();
@@ -38,6 +47,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
 
   @override
   void dispose() {
+    _timer?.cancel();
     for (final c in _weightControllers) {
       c.dispose();
     }
@@ -112,7 +122,36 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
-  Future<void> _saveSession() async {
+  // -------------------------------------------
+  // TIMER LOGIC
+  // -------------------------------------------
+  void _startTimer() {
+    if (_isTimerRunning) return;
+
+    setState(() {
+      _isTimerRunning = true;
+      _remainingSeconds = 60;
+    });
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_remainingSeconds == 0) {
+        timer.cancel();
+        setState(() {
+          _isTimerRunning = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _remainingSeconds--;
+      });
+    });
+  }
+
+  // -------------------------------------------
+  // SAVE SESSION AFTER 3 SETS
+  // -------------------------------------------
+  Future<void> _saveAfterThirdSet() async {
     final List<ExerciseSet> sets = [];
 
     for (int i = 0; i < 3; i++) {
@@ -144,83 +183,99 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       _lastSession = session;
     });
 
-    for (final c in _weightControllers) {
-      c.clear();
-    }
-    for (final c in _repsControllers) {
-      c.clear();
-    }
-
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Session saved'),
+      const SnackBar(content: Text('Exercise completed and saved')),
+    );
+
+    Navigator.of(context).pop(); // back to overview
+  }
+
+  // -------------------------------------------
+  // BUILD SET ROW
+  // -------------------------------------------
+  Widget _buildSetRow(int index) {
+    final isCurrent = _currentSet == index;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      decoration: BoxDecoration(
+        color: isCurrent ? Colors.blue.withOpacity(0.1) : Colors.black26,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isCurrent ? Colors.blue : Colors.grey,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(width: 50, child: Text('Set $index')),
+          Expanded(
+            child: TextField(
+              controller: _weightControllers[index - 1],
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'kg'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: _repsControllers[index - 1],
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: false),
+              decoration: const InputDecoration(labelText: 'reps'),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildNewSessionCard() {
+  // -------------------------------------------
+  // BUILD TIMER CARD
+  // -------------------------------------------
+  Widget _buildTimerCard() {
     return Card(
       margin: const EdgeInsets.all(12),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'New session (3 sets)',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              'Rest timer (1 minute)',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 8),
-            for (int i = 0; i < 3; i++)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 80,
-                      child: Text('Set ${i + 1}:'),
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: _weightControllers[i],
-                        keyboardType:
-                            const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'kg',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: _repsControllers[i],
-                        keyboardType:
-                            const TextInputType.numberWithOptions(
-                          decimal: false,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'reps',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _saveSession,
-                icon: const Icon(Icons.save),
-                label: const Text('Save session'),
-              ),
+            Text(
+              _isTimerRunning
+                  ? '$_remainingSeconds sec'
+                  : 'Ready for next set',
+              style: const TextStyle(fontSize: 22),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _isTimerRunning
+                  ? null
+                  : () {
+                      // SET COMPLETED → START PAUSE → MOVE TO NEXT SET
+                      if (_currentSet < 3) {
+                        _startTimer();
+                        setState(() {
+                          _currentSet++;
+                        });
+                      } else {
+                        // THIRD SET → COMPLETE EXERCISE
+                        _startTimer();
+                        Future.delayed(const Duration(seconds: 60), () {
+                          _saveAfterThirdSet();
+                        });
+                      }
+                    },
+              icon: const Icon(Icons.timer),
+              label: const Text('Start'),
             ),
           ],
         ),
@@ -228,29 +283,29 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
-  Widget _buildBody() {
+  // -------------------------------------------
+  // BUILD BODY
+  // -------------------------------------------
+  @override
+  Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    return ListView(
-      children: [
-        _buildLastSessionCard(),
-        _buildNewSessionCard(),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.exercise.name),
         centerTitle: true,
       ),
-      body: _buildBody(),
+      body: ListView(
+        children: [
+          _buildLastSessionCard(),
+          for (int i = 1; i <= 3; i++) _buildSetRow(i),
+          _buildTimerCard(),
+        ],
+      ),
     );
   }
 }
