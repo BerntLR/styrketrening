@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
 import 'exercise_detail_page.dart';
+import 'history_page.dart';
 
 class ExerciseListPage extends StatefulWidget {
   const ExerciseListPage({super.key});
@@ -236,12 +237,28 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     );
   }
 
+  void _openHistory() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const HistoryPage(),
+      ),
+    );
+    await _loadExercises();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('styrketrening'),
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'History',
+            icon: const Icon(Icons.history),
+            onPressed: _openHistory,
+          ),
+        ],
       ),
       body: _buildBody(),
       floatingActionButton: FloatingActionButton.extended(
