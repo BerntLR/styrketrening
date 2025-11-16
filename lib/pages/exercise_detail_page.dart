@@ -31,12 +31,10 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     (_) => TextEditingController(),
   );
 
-  // --- Timer state ---
   Timer? _timer;
   int _remainingSeconds = 60;
   bool _isTimerRunning = false;
 
-  // --- Which set are we on (1, 2, 3) ---
   int _currentSet = 1;
 
   @override
@@ -76,6 +74,12 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     final m = date.month.toString().padLeft(2, '0');
     final d = date.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
+  }
+
+  bool _isReadyToIncrease(ExerciseSession? session) {
+    if (session == null) return false;
+    if (session.sets.length < 3) return false;
+    return session.sets.every((s) => s.reps >= 12);
   }
 
   Widget _buildLastSessionCard() {
@@ -122,9 +126,25 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
-  // -------------------------------------------
-  // TIMER LOGIC
-  // -------------------------------------------
+  Widget _buildProgressionHint() {
+    if (!_isReadyToIncrease(_lastSession)) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      color: Colors.green.withOpacity(0.2),
+      child: const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text(
+          'Last time you hit 12 reps on all 3 sets.\n'
+          'You can increase the weight for this exercise.',
+          style: TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+  }
+
   void _startTimer() {
     if (_isTimerRunning) return;
 
@@ -148,9 +168,6 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     });
   }
 
-  // -------------------------------------------
-  // SAVE SESSION AFTER 3 SETS
-  // -------------------------------------------
   Future<void> _saveAfterThirdSet() async {
     final List<ExerciseSet> sets = [];
 
@@ -192,9 +209,6 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     Navigator.of(context).pop(); // back to overview
   }
 
-  // -------------------------------------------
-  // BUILD SET ROW
-  // -------------------------------------------
   Widget _buildSetRow(int index) {
     final isCurrent = _currentSet == index;
 
@@ -234,9 +248,6 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
-  // -------------------------------------------
-  // BUILD TIMER CARD
-  // -------------------------------------------
   Widget _buildTimerCard() {
     return Card(
       margin: const EdgeInsets.all(12),
@@ -260,14 +271,12 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
               onPressed: _isTimerRunning
                   ? null
                   : () {
-                      // SET COMPLETED → START PAUSE → MOVE TO NEXT SET
                       if (_currentSet < 3) {
                         _startTimer();
                         setState(() {
                           _currentSet++;
                         });
                       } else {
-                        // THIRD SET → COMPLETE EXERCISE
                         _startTimer();
                         Future.delayed(const Duration(seconds: 60), () {
                           _saveAfterThirdSet();
@@ -283,9 +292,6 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
-  // -------------------------------------------
-  // BUILD BODY
-  // -------------------------------------------
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -302,6 +308,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       body: ListView(
         children: [
           _buildLastSessionCard(),
+          _buildProgressionHint(),
           for (int i = 1; i <= 3; i++) _buildSetRow(i),
           _buildTimerCard(),
         ],

@@ -152,6 +152,13 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     return '${set.weightKg} kg x ${set.reps}';
   }
 
+  bool _isReadyToIncrease(ExerciseSession? session) {
+    if (session == null) return false;
+    if (session.sets.length < 3) return false;
+    // Alle 3 sett må ha 12 eller flere reps
+    return session.sets.every((s) => s.reps >= 12);
+  }
+
   Widget _buildSubtitle(Exercise exercise) {
     final last = _lastSessions[exercise.id];
     if (last == null) {
@@ -163,9 +170,13 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     final s2 = _formatSet(2, last);
     final s3 = _formatSet(3, last);
 
+    final ready = _isReadyToIncrease(last);
+
+    final extraLine = ready ? '\nReady to increase weight' : '';
+
     return Text(
       'Last: $dateStr\n'
-      'S1: $s1 | S2: $s2 | S3: $s3',
+      'S1: $s1 | S2: $s2 | S3: $s3$extraLine',
       style: const TextStyle(fontSize: 13),
     );
   }
@@ -203,8 +214,13 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
         itemCount: _exercises.length,
         itemBuilder: (context, index) {
           final exercise = _exercises[index];
+          final last = _lastSessions[exercise.id];
+          final ready = _isReadyToIncrease(last);
 
           return ListTile(
+            leading: ready
+                ? const Icon(Icons.trending_up, color: Colors.greenAccent)
+                : const Icon(Icons.fitness_center),
             title: Text(exercise.name),
             subtitle: _buildSubtitle(exercise),
             onTap: () async {
