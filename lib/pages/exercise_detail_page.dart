@@ -20,6 +20,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   final TrainingStorageService _storage = TrainingStorageService();
 
   ExerciseSession? _lastSession;
+  List<ExerciseSession> _sessions = [];
   bool _isLoading = true;
 
   final List<TextEditingController> _weightControllers = List.generate(
@@ -40,7 +41,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   @override
   void initState() {
     super.initState();
-    _loadLastSession();
+    _loadData();
   }
 
   @override
@@ -55,16 +56,19 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     super.dispose();
   }
 
-  Future<void> _loadLastSession() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
     });
 
     final last =
         await _storage.getLastSessionForExercise(widget.exercise.id);
+    final sessions =
+        await _storage.getSessionsForExercise(widget.exercise.id);
 
     setState(() {
       _lastSession = last;
+      _sessions = sessions;
       _isLoading = false;
     });
   }
@@ -145,6 +149,62 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
+  String _formatSet(ExerciseSession session, int index) {
+    final set = session.sets
+        .where((s) => s.setIndex == index)
+        .cast<ExerciseSet?>()
+        .firstWhere(
+          (s) => s != null,
+          orElse: () => null,
+        );
+
+    if (set == null) {
+      return '–';
+    }
+
+    return '${set.weightKg} kg x ${set.reps}';
+  }
+
+  Widget _buildHistoryCard() {
+    if (_sessions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Newest first for progresjonsblikk
+    final sessionsDescending = _sessions.reversed.toList();
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'History for this exercise',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final s in sessionsDescending)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Text(
+                  '${_formatDate(s.date)}  '
+                  'S1: ${_formatSet(s, 1)} | '
+                  'S2: ${_formatSet(s, 2)} | '
+                  'S3: ${_formatSet(s, 3)}',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _startTimer() {
     if (_isTimerRunning) return;
 
@@ -198,6 +258,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
 
     setState(() {
       _lastSession = session;
+      _sessions.add(session);
     });
 
     if (!mounted) return;
@@ -309,6 +370,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
         children: [
           _buildLastSessionCard(),
           _buildProgressionHint(),
+          _buildHistoryCard(),
           for (int i = 1; i <= 3; i++) _buildSetRow(i),
           _buildTimerCard(),
         ],
