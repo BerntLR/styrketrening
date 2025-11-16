@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
+import 'exercise_detail_page.dart';
 
 class ExerciseListPage extends StatefulWidget {
   const ExerciseListPage({super.key});
@@ -13,6 +14,7 @@ class ExerciseListPage extends StatefulWidget {
 class _ExerciseListPageState extends State<ExerciseListPage> {
   final TrainingStorageService _storage = TrainingStorageService();
   List<Exercise> _exercises = [];
+  final Map<String, ExerciseSession?> _lastSessions = {};
   bool _isLoading = true;
 
   @override
@@ -27,9 +29,17 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     });
 
     final exercises = await _storage.loadExercises();
+    final Map<String, ExerciseSession?> lastMap = {};
+
+    for (final ex in exercises) {
+      lastMap[ex.id] = await _storage.getLastSessionForExercise(ex.id);
+    }
 
     setState(() {
       _exercises = exercises;
+      _lastSessions
+        ..clear()
+        ..addAll(lastMap);
       _isLoading = false;
     });
   }
@@ -118,6 +128,47 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     await _loadExercises();
   }
 
+  String _formatDate(DateTime date) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  String _formatSet(int index, ExerciseSession session) {
+    final set = session.sets
+        .where((s) => s.setIndex == index)
+        .cast<ExerciseSet?>()
+        .firstWhere(
+          (s) => s != null,
+          orElse: () => null,
+        );
+
+    if (set == null) {
+      return '–';
+    }
+
+    return '${set.weightKg} kg x ${set.reps}';
+  }
+
+  Widget _buildSubtitle(Exercise exercise) {
+    final last = _lastSessions[exercise.id];
+    if (last == null) {
+      return const Text('No sessions yet.');
+    }
+
+    final dateStr = _formatDate(last.date);
+    final s1 = _formatSet(1, last);
+    final s2 = _formatSet(2, last);
+    final s3 = _formatSet(3, last);
+
+    return Text(
+      'Last: $dateStr\n'
+      'S1: $s1 | S2: $s2 | S3: $s3',
+      style: const TextStyle(fontSize: 13),
+    );
+  }
+
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(
@@ -154,12 +205,15 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
 
           return ListTile(
             title: Text(exercise.name),
-            subtitle: const Text(
-              'Last session and sets will be shown here later',
-            ),
-            onTap: () {
-              // Her kommer vi senere til å åpne detaljsiden for øvelsen
-              // (med forrige økt, nye sett osv.)
+            subtitle: _buildSubtitle(exercise),
+            onTap: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) =>
+                      ExerciseDetailPage(exercise: exercise),
+                ),
+              );
+              await _loadExercises();
             },
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -198,4 +252,3 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     );
   }
 }
-
