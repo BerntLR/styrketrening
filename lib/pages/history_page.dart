@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
-import '../services/backup_service.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -13,7 +12,6 @@ class HistoryPage extends StatefulWidget {
 
 class _HistoryPageState extends State<HistoryPage> {
   final TrainingStorageService _storage = TrainingStorageService();
-  final BackupService _backupService = BackupService();
 
   bool _isLoading = true;
   List<ExerciseSession> _sessions = [];
@@ -210,8 +208,11 @@ class _HistoryPageState extends State<HistoryPage> {
       return;
     }
 
-    ExerciseSet updatedSet(int index, TextEditingController wc,
-        TextEditingController rc) {
+    ExerciseSet updatedSet(
+      int index,
+      TextEditingController wc,
+      TextEditingController rc,
+    ) {
       final weight = double.tryParse(wc.text.trim()) ?? 0;
       final reps = int.tryParse(rc.text.trim()) ?? 0;
       return ExerciseSet(
@@ -327,23 +328,6 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  Future<void> _runBackup() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Creating backup...')),
-    );
-
-    final path = await _backupService.createBackupFile();
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Backup saved:\n$path'),
-        duration: const Duration(seconds: 5),
-      ),
-    );
-  }
-
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(
@@ -394,15 +378,9 @@ class _HistoryPageState extends State<HistoryPage> {
       appBar: AppBar(
         title: const Text('History'),
         centerTitle: true,
-        actions: [
-          IconButton(
-            tooltip: 'Backup',
-            icon: const Icon(Icons.backup),
-            onPressed: _runBackup,
-          ),
-        ],
       ),
       body: _buildBody(),
     );
   }
 }
+

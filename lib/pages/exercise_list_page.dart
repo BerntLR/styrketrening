@@ -2,8 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
+import '../services/backup_service.dart';
 import 'exercise_detail_page.dart';
 import 'history_page.dart';
+
+enum _MenuAction {
+  exportData,
+  importData,
+}
 
 class ExerciseListPage extends StatefulWidget {
   const ExerciseListPage({super.key});
@@ -14,6 +20,8 @@ class ExerciseListPage extends StatefulWidget {
 
 class _ExerciseListPageState extends State<ExerciseListPage> {
   final TrainingStorageService _storage = TrainingStorageService();
+  final BackupService _backup = BackupService();
+
   List<Exercise> _exercises = [];
   final Map<String, ExerciseSession?> _lastSessions = {};
   bool _isLoading = true;
@@ -23,6 +31,33 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     super.initState();
     _loadExercises();
   }
+
+  // ============================
+  // BACKUP / IMPORT MENY
+  // ============================
+
+  Future<void> _handleMenuAction(_MenuAction action) async {
+    switch (action) {
+      case _MenuAction.exportData:
+        await _backup.exportBackup();
+        break;
+
+      case _MenuAction.importData:
+        final ok = await _backup.importBackup();
+        if (ok) {
+          await _loadExercises();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Data importert")),
+          );
+        }
+        break;
+    }
+  }
+
+  // ============================
+  // LASTER ØVELSER OG SESSIONS
+  // ============================
 
   Future<void> _loadExercises() async {
     setState(() {
@@ -71,9 +106,7 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
             ElevatedButton(
               onPressed: () {
                 final name = controller.text.trim();
-                if (name.isEmpty) {
-                  return;
-                }
+                if (name.isEmpty) return;
                 Navigator.of(context).pop(name);
               },
               child: Text(isEditing ? 'Save' : 'Add'),
@@ -83,9 +116,7 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
       },
     );
 
-    if (result == null) {
-      return;
-    }
+    if (result == null) return;
 
     if (isEditing) {
       final updated = Exercise(id: exercise!.id, name: result);
@@ -121,9 +152,7 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
       },
     );
 
-    if (confirm != true) {
-      return;
-    }
+    if (confirm != true) return;
 
     await _storage.deleteExercise(exercise.id);
     await _loadExercises();
@@ -140,14 +169,9 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     final set = session.sets
         .where((s) => s.setIndex == index)
         .cast<ExerciseSet?>()
-        .firstWhere(
-          (s) => s != null,
-          orElse: () => null,
-        );
+        .firstWhere((s) => s != null, orElse: () => null);
 
-    if (set == null) {
-      return '–';
-    }
+    if (set == null) return '–';
 
     return '${set.weightKg} kg x ${set.reps}';
   }
@@ -155,7 +179,6 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
   bool _isReadyToIncrease(ExerciseSession? session) {
     if (session == null) return false;
     if (session.sets.length < 3) return false;
-    // Alle 3 sett må ha 12 eller flere reps
     return session.sets.every((s) => s.reps >= 12);
   }
 
@@ -169,7 +192,6 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     final s1 = _formatSet(1, last);
     final s2 = _formatSet(2, last);
     final s3 = _formatSet(3, last);
-
     final ready = _isReadyToIncrease(last);
 
     final extraLine = ready ? '\nReady to increase weight' : '';
@@ -183,9 +205,7 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_exercises.isEmpty) {
@@ -193,16 +213,13 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'No exercises yet.',
-              style: TextStyle(fontSize: 16),
-            ),
+            const Text('No exercises yet.', style: TextStyle(fontSize: 16)),
             const SizedBox(height: 8),
             ElevatedButton.icon(
               onPressed: () => _showExerciseDialog(),
               icon: const Icon(Icons.add),
               label: const Text('Add first exercise'),
-            ),
+            )
           ],
         ),
       );
@@ -225,10 +242,7 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
             subtitle: _buildSubtitle(exercise),
             onTap: () async {
               await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) =>
-                      ExerciseDetailPage(exercise: exercise),
-                ),
+                MaterialPageRoute(builder: (context) => ExerciseDetailPage(exercise: exercise)),
               );
               await _loadExercises();
             },
@@ -255,9 +269,7 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
 
   void _openHistory() async {
     await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const HistoryPage(),
-      ),
+      MaterialPageRoute(builder: (context) => const HistoryPage()),
     );
     await _loadExercises();
   }
@@ -274,9 +286,25 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
             icon: const Icon(Icons.history),
             onPressed: _openHistory,
           ),
+
+          PopupMenuButton<_MenuAction>(
+            onSelected: _handleMenuAction,
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: _MenuAction.exportData,
+                child: Text('Eksporter data'),
+              ),
+              PopupMenuItem(
+                value: _MenuAction.importData,
+                child: Text('Importer data'),
+              ),
+            ],
+          ),
         ],
       ),
+
       body: _buildBody(),
+
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showExerciseDialog(),
         icon: const Icon(Icons.add),
@@ -285,3 +313,4 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     );
   }
 }
+
