@@ -32,6 +32,12 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     (_) => TextEditingController(),
   );
 
+  // Nytt: pause-innstillinger og valgfri timer
+  bool _useTimer = true;
+  int _pauseMinutes = 1;
+  final TextEditingController _pauseController =
+      TextEditingController(text: '1');
+
   Timer? _timer;
   int _remainingSeconds = 60;
   bool _isTimerRunning = false;
@@ -53,6 +59,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     for (final c in _repsControllers) {
       c.dispose();
     }
+    _pauseController.dispose();
     super.dispose();
   }
 
@@ -205,14 +212,95 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
-  void _startTimer() {
+  /// Nytt: kort for økt-innstillinger (pause og timer av/på)
+  Widget _buildSessionSettingsCard() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Session settings',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Rest time (minutes)',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                ),
+                SizedBox(
+                  width: 80,
+                  child: TextField(
+                    controller: _pauseController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Minutes',
+                    ),
+                    onChanged: (value) {
+                      final parsed = int.tryParse(value.trim()) ?? 0;
+                      final sanitized = parsed < 0 ? 0 : parsed;
+                      setState(() {
+                        _pauseMinutes = sanitized;
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Use rest timer',
+                style: TextStyle(fontSize: 14),
+              ),
+              value: _useTimer,
+              onChanged: (v) {
+                setState(() {
+                  _useTimer = v;
+                  if (!v) {
+                    // Nullstill timer hvis vi slår den av
+                    _timer?.cancel();
+                    _isTimerRunning = false;
+                    _remainingSeconds = 0;
+                    _currentSet = 1;
+                  }
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Start nedtelling med gitt antall sekunder
+  void _startTimer(int seconds) {
     if (_isTimerRunning) return;
+    if (seconds <= 0) {
+      // Ingen faktisk pause – bare "ferdig" med en gang
+      setState(() {
+        _isTimerRunning = false;
+        _remainingSeconds = 0;
+      });
+      return;
+    }
 
     setState(() {
       _isTimerRunning = true;
-      _remainingSeconds = 60;
+      _remainingSeconds = seconds;
     });
 
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_remainingSeconds == 0) {
         timer.cancel();
@@ -228,7 +316,8 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     });
   }
 
-  Future<void> _saveAfterThirdSet() async {
+  /// Felles lagrefunksjon: brukes både av timer-flow og manuelt lagre-knapp
+  Future<void> _saveSession() async {
     final List<ExerciseSet> sets = [];
 
     for (int i = 0; i < 3; i++) {
@@ -271,7 +360,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   }
 
   Widget _buildSetRow(int index) {
-    final isCurrent = _currentSet == index;
+    final isCurrent = _useTimer && (_currentSet == index);
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
@@ -310,15 +399,19 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   }
 
   Widget _buildTimerCard() {
+    if (!_useTimer) {
+      return const SizedBox.shrink();
+    }
+
     return Card(
       margin: const EdgeInsets.all(12),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            const Text(
-              'Rest timer (1 minute)',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Text(
+              'Rest timer (${_pauseMinutes} min)',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Text(
@@ -332,16 +425,30 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
               onPressed: _isTimerRunning
                   ? null
                   : () {
+                      final totalSeconds = _pauseMinutes <= 0
+                          ? 0
+                          : _pauseMinutes * 60;
+
                       if (_currentSet < 3) {
-                        _startTimer();
+                        if (totalSeconds > 0) {
+                          _startTimer(totalSeconds);
+                        }
                         setState(() {
                           _currentSet++;
                         });
                       } else {
-                        _startTimer();
-                        Future.delayed(const Duration(seconds: 60), () {
-                          _saveAfterThirdSet();
-                        });
+                        // Siste sett – enten med pause eller rett til lagring
+                        if (totalSeconds > 0) {
+                          _startTimer(totalSeconds);
+                          Future.delayed(
+                            Duration(seconds: totalSeconds),
+                            () {
+                              _saveSession();
+                            },
+                          );
+                        } else {
+                          _saveSession();
+                        }
                       }
                     },
               icon: const Icon(Icons.timer),
@@ -349,6 +456,22 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Knapp for å lagre manuelt når timer er AV
+  Widget _buildManualSaveButton() {
+    if (_useTimer) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: ElevatedButton.icon(
+        onPressed: _saveSession,
+        icon: const Icon(Icons.check),
+        label: const Text('Save session'),
       ),
     );
   }
@@ -371,10 +494,13 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
           _buildLastSessionCard(),
           _buildProgressionHint(),
           _buildHistoryCard(),
+          _buildSessionSettingsCard(),
           for (int i = 1; i <= 3; i++) _buildSetRow(i),
           _buildTimerCard(),
+          _buildManualSaveButton(),
         ],
       ),
     );
   }
 }
+

@@ -2,7 +2,7 @@ name: styrketrening
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.9.0
@@ -25,16 +25,11 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  # disse to trenger du ikke her, de ligger allerede over i dependencies
-  # shared_preferences: ^2.2.2
-  # path_provider: ^2.1.4
-
   flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true
 
-  # legg til ikon-mappen her hvis du ikke allerede har gjort det:
   assets:
     - assets/icon/icon.png
 
