@@ -135,4 +135,10 @@ class TrainingStorageService {
     }
     return sessions.last;
   }
+
+
+  Future<List<Exercise>> getExercises() async {
+    return loadExercises();
+  }
+
 }

@@ -81,15 +81,6 @@ class _HistoryPageState extends State<HistoryPage> {
     final exercise = item.exercise;
     final sessions = item.sessions;
 
-    // Vis kun de 3 siste øktene for å unngå gigantisk liste
-    final visibleSessions = sessions.length <= 3
-        ? sessions
-        : sessions.sublist(0, 3);
-
-    final latest = sessions.first;
-    final totalCount = sessions.length;
-    final visibleCount = visibleSessions.length;
-
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Padding(
@@ -99,24 +90,16 @@ class _HistoryPageState extends State<HistoryPage> {
           children: [
             // Tittel: navn på øvelse + dato for siste økt
             Text(
-              '${exercise.name} – last: ${_formatDate(latest.date)}',
+              '${exercise.name} – last: ${_formatDate(sessions.first.date)}',
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Showing $visibleCount of $totalCount sessions',
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
-            ),
             const SizedBox(height: 8),
 
-            // Liste over (maks) 3 nyeste økter
-            for (final session in visibleSessions)
+            // Liste over økter (nyeste først)
+            for (final session in sessions)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Column(
@@ -148,6 +131,32 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_items.isEmpty) {
+      return const Center(
+        child: Text(
+          'No sessions recorded yet.',
+          style: TextStyle(fontSize: 14),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadHistory,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: _items.length,
+        itemBuilder: (context, index) {
+          return _buildExerciseCard(_items[index]);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -155,25 +164,7 @@ class _HistoryPageState extends State<HistoryPage> {
         title: const Text('Training history'),
         centerTitle: true,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _items.isEmpty
-              ? const Center(
-                  child: Text(
-                    'No sessions recorded yet.',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadHistory,
-                  child: ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: _items.length,
-                    itemBuilder: (context, index) {
-                      return _buildExerciseCard(_items[index]);
-                    },
-                  ),
-                ),
+      body: _buildBody(),
     );
   }
 }

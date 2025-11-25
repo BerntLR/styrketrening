@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
-import 'exercise_history_page.dart';
 
 class ExerciseDetailPage extends StatefulWidget {
   final Exercise exercise;
@@ -439,20 +438,6 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       appBar: AppBar(
         title: Text(widget.exercise.name),
         centerTitle: true,
-        actions: [
-          IconButton(
-            tooltip: 'Full history',
-            icon: const Icon(Icons.history),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) =>
-                      ExerciseHistoryPage(exercise: widget.exercise),
-                ),
-              );
-            },
-          ),
-        ],
       ),
       body: ListView(
         children: [

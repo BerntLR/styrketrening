@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
-import 'exercise_history_page.dart';
 
 class ExerciseDetailPage extends StatefulWidget {
   final Exercise exercise;
@@ -21,6 +20,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   final TrainingStorageService _storage = TrainingStorageService();
 
   ExerciseSession? _lastSession;
+  List<ExerciseSession> _sessions = [];
   bool _isLoading = true;
 
   final List<TextEditingController> _weightControllers = List.generate(
@@ -70,9 +70,12 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
 
     final last =
         await _storage.getLastSessionForExercise(widget.exercise.id);
+    final sessions =
+        await _storage.getSessionsForExercise(widget.exercise.id);
 
     setState(() {
       _lastSession = last;
+      _sessions = sessions;
       _isLoading = false;
     });
   }
@@ -128,11 +131,6 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Total volume: ${_calculateTotalVolume(last).toStringAsFixed(0)} kg',
-              style: const TextStyle(fontSize: 14),
-            ),
-            const SizedBox(height: 8),
             for (final set in last.sets)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
@@ -161,6 +159,80 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
           'Last time you hit 12 reps on all 3 sets.\n'
           'You can increase the weight for this exercise.',
           style: TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+  }
+
+  /// Ny versjon: History som viser totalvolum per økt og markerer beste økt
+  Widget _buildHistoryCard() {
+    if (_sessions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Nyeste først
+    final sessionsDescending = _sessions.reversed.toList();
+
+    // Finn økten med høyest totalvolum
+    String? bestSessionId;
+    double bestVolume = -1;
+    for (final s in sessionsDescending) {
+      final v = _calculateTotalVolume(s);
+      if (v > bestVolume) {
+        bestVolume = v;
+        bestSessionId = s.id;
+      }
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'History for this exercise',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final s in sessionsDescending)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Builder(
+                      builder: (context) {
+                        final volume = _calculateTotalVolume(s);
+                        final isBest = s.id == bestSessionId;
+                        final volumeText =
+                            '${volume.toStringAsFixed(0)} kg total';
+                        return Text(
+                          '${_formatDate(s.date)} – $volumeText${isBest ? " ★" : ""}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 2),
+                    for (final set in s.sets)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 1),
+                        child: Text(
+                          'Set ${set.setIndex}: ${set.weightKg} kg x ${set.reps} reps',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -300,6 +372,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
 
     setState(() {
       _lastSession = session;
+      _sessions.add(session);
     });
 
     if (!mounted) return;
@@ -439,25 +512,12 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       appBar: AppBar(
         title: Text(widget.exercise.name),
         centerTitle: true,
-        actions: [
-          IconButton(
-            tooltip: 'Full history',
-            icon: const Icon(Icons.history),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) =>
-                      ExerciseHistoryPage(exercise: widget.exercise),
-                ),
-              );
-            },
-          ),
-        ],
       ),
       body: ListView(
         children: [
           _buildLastSessionCard(),
           _buildProgressionHint(),
+          _buildHistoryCard(),
           _buildSessionSettingsCard(),
           for (int i = 1; i <= 3; i++) _buildSetRow(i),
           _buildTimerCard(),
@@ -467,3 +527,4 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 }
+

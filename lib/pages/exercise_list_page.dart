@@ -242,7 +242,9 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
             subtitle: _buildSubtitle(exercise),
             onTap: () async {
               await Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => ExerciseDetailPage(exercise: exercise)),
+                MaterialPageRoute(
+                  builder: (context) => ExerciseDetailPage(exercise: exercise),
+                ),
               );
               await _loadExercises();
             },
@@ -269,7 +271,9 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
 
   void _openHistory() async {
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const HistoryPage()),
+      MaterialPageRoute(
+        builder: (context) => const HistoryPage(),
+      ),
     );
     await _loadExercises();
   }
@@ -286,7 +290,6 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
             icon: const Icon(Icons.history),
             onPressed: _openHistory,
           ),
-
           PopupMenuButton<_MenuAction>(
             onSelected: _handleMenuAction,
             itemBuilder: (context) => const [
@@ -302,9 +305,7 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
           ),
         ],
       ),
-
       body: _buildBody(),
-
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showExerciseDialog(),
         icon: const Icon(Icons.add),
@@ -313,4 +314,3 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     );
   }
 }
-
