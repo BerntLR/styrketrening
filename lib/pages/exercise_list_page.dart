@@ -80,52 +80,157 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     });
   }
 
-  Future<void> _showExerciseDialog({Exercise? exercise}) async {
-    final isEditing = exercise != null;
-    final controller = TextEditingController(text: exercise?.name ?? '');
+  // ============================
+  // FORMATTERING / LOGIKK
+  // ============================
 
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(isEditing ? 'Edit exercise' : 'New exercise'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Exercise name',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(null);
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final name = controller.text.trim();
-                if (name.isEmpty) return;
-                Navigator.of(context).pop(name);
-              },
-              child: Text(isEditing ? 'Save' : 'Add'),
-            ),
-          ],
-        );
-      },
-    );
+  String _formatDate(DateTime date) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
 
-    if (result == null) return;
+  String _formatSet(int index, ExerciseSession session) {
+    final set = session.sets
+        .where((s) => s.setIndex == index)
+        .cast<ExerciseSet?>()
+        .firstWhere((s) => s != null, orElse: () => null);
 
-    if (isEditing) {
-      final updated = Exercise(id: exercise!.id, name: result);
-      await _storage.updateExercise(updated);
-    } else {
-      await _storage.addExercise(result);
+    if (set == null) return '–';
+
+    return '${set.weightKg} kg x ${set.reps}';
+  }
+
+  bool _isReadyToIncrease(ExerciseSession? session) {
+    if (session == null) return false;
+    if (session.sets.length < 3) return false;
+    return session.sets.every((s) => s.reps >= 12);
+  }
+
+  /// Antall dager siden siste økt for en øvelse.
+  /// Returnerer null hvis ingen økter ennå.
+  int? _daysSinceLastSession(Exercise exercise) {
+    final last = _lastSessions[exercise.id];
+    if (last == null) return null;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final lastDay = DateTime(last.date.year, last.date.month, last.date.day);
+    return today.difference(lastDay).inDays;
+  }
+
+  Widget _buildSubtitle(Exercise exercise) {
+    final last = _lastSessions[exercise.id];
+    if (last == null) {
+      return const Text('No sessions yet.');
     }
 
-    await _loadExercises();
+    final dateStr = _formatDate(last.date);
+    final s1 = _formatSet(1, last);
+    final s2 = _formatSet(2, last);
+    final s3 = _formatSet(3, last);
+    final ready = _isReadyToIncrease(last);
+
+    final extraLine = ready ? '\nReady to increase weight' : '';
+
+    return Text(
+      'Last: $dateStr\n'
+      'S1: $s1 | S2: $s2 | S3: $s3$extraLine',
+      style: const TextStyle(fontSize: 13),
+    );
+  }
+
+  Widget _buildDaysBadge(int? daysSince) {
+    if (daysSince == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: const EdgeInsets.only(right: 4),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey.shade700,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        '$daysSince',
+        style: const TextStyle(
+          fontSize: 12,
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_exercises.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('No exercises yet.', style: TextStyle(fontSize: 16)),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: () => _showExerciseDialog(),
+              icon: const Icon(Icons.add),
+              label: const Text('New exercise'),
+            )
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadExercises,
+      child: ListView.builder(
+        itemCount: _exercises.length,
+        itemBuilder: (context, index) {
+          final exercise = _exercises[index];
+          final last = _lastSessions[exercise.id];
+          final ready = _isReadyToIncrease(last);
+          final daysSince = _daysSinceLastSession(exercise);
+
+          return ListTile(
+            leading: ready
+                ? const Icon(Icons.trending_up, color: Colors.greenAccent)
+                : const Icon(Icons.fitness_center),
+            title: Text(exercise.name),
+            subtitle: _buildSubtitle(exercise),
+            onTap: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) =>
+                      ExerciseDetailPage(exercise: exercise),
+                ),
+              );
+              await _loadExercises();
+            },
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildDaysBadge(daysSince),
+                IconButton(
+                  tooltip: 'Edit',
+                  icon: const Icon(Icons.edit),
+                  onPressed: () => _showExerciseDialog(exercise: exercise),
+                ),
+                IconButton(
+                  tooltip: 'Delete',
+                  icon: const Icon(Icons.delete),
+                  onPressed: () => _confirmDeleteExercise(exercise),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _confirmDeleteExercise(Exercise exercise) async {
@@ -158,115 +263,50 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     await _loadExercises();
   }
 
-  String _formatDate(DateTime date) {
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
+  Future<void> _showExerciseDialog({Exercise? exercise}) async {
+    final isEditing = exercise != null;
+    final controller = TextEditingController(text: exercise?.name ?? '');
 
-  String _formatSet(int index, ExerciseSession session) {
-    final set = session.sets
-        .where((s) => s.setIndex == index)
-        .cast<ExerciseSet?>()
-        .firstWhere((s) => s != null, orElse: () => null);
-
-    if (set == null) return '–';
-
-    return '${set.weightKg} kg x ${set.reps}';
-  }
-
-  bool _isReadyToIncrease(ExerciseSession? session) {
-    if (session == null) return false;
-    if (session.sets.length < 3) return false;
-    return session.sets.every((s) => s.reps >= 12);
-  }
-
-  Widget _buildSubtitle(Exercise exercise) {
-    final last = _lastSessions[exercise.id];
-    if (last == null) {
-      return const Text('No sessions yet.');
-    }
-
-    final dateStr = _formatDate(last.date);
-    final s1 = _formatSet(1, last);
-    final s2 = _formatSet(2, last);
-    final s3 = _formatSet(3, last);
-    final ready = _isReadyToIncrease(last);
-
-    final extraLine = ready ? '\nReady to increase weight' : '';
-
-    return Text(
-      'Last: $dateStr\n'
-      'S1: $s1 | S2: $s2 | S3: $s3$extraLine',
-      style: const TextStyle(fontSize: 13),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_exercises.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('No exercises yet.', style: TextStyle(fontSize: 16)),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: () => _showExerciseDialog(),
-              icon: const Icon(Icons.add),
-              label: const Text('Add first exercise'),
-            )
-          ],
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _loadExercises,
-      child: ListView.builder(
-        itemCount: _exercises.length,
-        itemBuilder: (context, index) {
-          final exercise = _exercises[index];
-          final last = _lastSessions[exercise.id];
-          final ready = _isReadyToIncrease(last);
-
-          return ListTile(
-            leading: ready
-                ? const Icon(Icons.trending_up, color: Colors.greenAccent)
-                : const Icon(Icons.fitness_center),
-            title: Text(exercise.name),
-            subtitle: _buildSubtitle(exercise),
-            onTap: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => ExerciseDetailPage(exercise: exercise),
-                ),
-              );
-              await _loadExercises();
-            },
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: 'Edit',
-                  icon: const Icon(Icons.edit),
-                  onPressed: () => _showExerciseDialog(exercise: exercise),
-                ),
-                IconButton(
-                  tooltip: 'Delete',
-                  icon: const Icon(Icons.delete),
-                  onPressed: () => _confirmDeleteExercise(exercise),
-                ),
-              ],
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(isEditing ? 'Edit exercise' : 'New exercise'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Exercise name',
             ),
-          );
-        },
-      ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final name = controller.text.trim();
+                if (name.isEmpty) return;
+                Navigator.of(context).pop(name);
+              },
+              child: Text(isEditing ? 'Save' : 'Add'),
+            ),
+          ],
+        );
+      },
     );
+
+    if (result == null) return;
+
+    if (isEditing) {
+      final updated = Exercise(id: exercise!.id, name: result);
+      await _storage.updateExercise(updated);
+    } else {
+      await _storage.addExercise(result);
+    }
+
+    await _loadExercises();
   }
 
   void _openHistory() async {
@@ -314,3 +354,4 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     );
   }
 }
+

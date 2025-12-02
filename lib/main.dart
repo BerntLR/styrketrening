@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 
 import 'pages/exercise_list_page.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // --- Delay for splashscreen ---
+  await Future.delayed(const Duration(seconds: 2));
+
   runApp(const StyrketreningApp());
 }
 

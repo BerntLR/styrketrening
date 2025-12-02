@@ -2,7 +2,7 @@ name: styrketrening
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+2
+version: 1.0.2+5
 
 environment:
   sdk: ^3.9.0
@@ -13,11 +13,8 @@ dependencies:
 
   shared_preferences: ^2.2.2
   path_provider: ^2.1.4
-
   cupertino_icons: ^1.0.8
   flutter_launcher_icons: ^0.14.4
-
-  # Nye for backup/export/import:
   share_plus: ^10.0.2
   file_picker: ^8.1.2
 
@@ -25,7 +22,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
-  flutter_native_splash: ^2.4.1
+  flutter_native_splash: ^2.4.7
 
 flutter:
   uses-material-design: true
