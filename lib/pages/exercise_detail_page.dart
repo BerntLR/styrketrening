@@ -7,6 +7,8 @@ import 'exercise_history_page.dart';
 
 class ExerciseDetailPage extends StatefulWidget {
   final Exercise exercise;
+
+  /// If this is provided, the page will open in "edit existing session" mode.
   final ExerciseSession? initialSession;
 
   const ExerciseDetailPage({
@@ -22,12 +24,13 @@ class ExerciseDetailPage extends StatefulWidget {
 class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   final TrainingStorageService _storage = TrainingStorageService();
 
-  ExerciseSession? _lastSession;
-  ExerciseSession? _editingSession;
-  bool get _isEditing => _editingSession != null;
-
+  ExerciseSession? _lastSession; // last recorded session for this exercise
+  ExerciseSession? _editingSession; // non-null when editing an existing one
   bool _isLoading = true;
 
+  bool get _isEditing => _editingSession != null;
+
+  // controllers for 3 sets
   final List<TextEditingController> _weightControllers = List.generate(
     3,
     (_) => TextEditingController(),
@@ -37,7 +40,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     (_) => TextEditingController(),
   );
 
-  // Pause-innstillinger og valgfri timer
+  // Pause settings and optional timer
   bool _useTimer = true;
   int _pauseMinutes = 1;
   final TextEditingController _pauseController =
@@ -47,18 +50,11 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   int _remainingSeconds = 60;
   bool _isTimerRunning = false;
 
-  int _currentSet = 1;
+  int _currentSet = 1; // 1..3
 
   @override
   void initState() {
     super.initState();
-
-    // Hvis vi kommer inn for å redigere en økt fra HistoryPage
-    if (widget.initialSession != null) {
-      _editingSession = widget.initialSession;
-      _prefillFromSession(widget.initialSession!);
-    }
-
     _loadData();
   }
 
@@ -75,29 +71,35 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     super.dispose();
   }
 
-  void _prefillFromSession(ExerciseSession session) {
-    for (int i = 0; i < 3; i++) {
-      final setIndex = i + 1;
-      final set = session.sets
-          .where((s) => s.setIndex == setIndex)
-          .cast<ExerciseSet?>()
-          .firstWhere((s) => s != null, orElse: () => null);
-
-      if (set != null) {
-        _weightControllers[i].text = set.weightKg.toString();
-        _repsControllers[i].text = set.reps.toString();
-      } else {
-        _weightControllers[i].text = '';
-        _repsControllers[i].text = '';
-      }
-    }
-  }
-
   Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
     });
 
+    // If we came from HistoryPage with an existing session, set editing mode
+    if (widget.initialSession != null) {
+      _editingSession = widget.initialSession;
+
+      // Prefill controllers from the session we are editing
+      final sets = widget.initialSession!.sets;
+      for (int i = 0; i < 3; i++) {
+        if (i < sets.length) {
+          _weightControllers[i].text = sets[i].weightKg.toString();
+          _repsControllers[i].text = sets[i].reps.toString();
+        } else {
+          _weightControllers[i].text = '';
+          _repsControllers[i].text = '';
+        }
+      }
+    } else {
+      // New session: keep controllers empty (user fills them)
+      for (int i = 0; i < 3; i++) {
+        _weightControllers[i].text = '';
+        _repsControllers[i].text = '';
+      }
+    }
+
+    // Independent of editing/new, we still fetch the last session for display
     final last =
         await _storage.getLastSessionForExercise(widget.exercise.id);
 
@@ -177,6 +179,26 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
+  Widget _buildEditingBanner() {
+    if (!_isEditing || _editingSession == null) {
+      return const SizedBox.shrink();
+    }
+
+    final dateStr = _formatDate(_editingSession!.date);
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      color: Colors.amber.withOpacity(0.2),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Text(
+          'You are editing a previous session from $dateStr.\n'
+          'Saving will overwrite this session.',
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+  }
+
   Widget _buildProgressionHint() {
     if (!_isReadyToIncrease(_lastSession)) {
       return const SizedBox.shrink();
@@ -196,7 +218,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
-  /// Kort for økt-innstillinger (pause og timer av/på)
+  /// Card for session settings (rest time and timer on/off)
   Widget _buildSessionSettingsCard() {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -205,20 +227,14 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              _isEditing ? 'Edit session' : 'New session',
-              style: const TextStyle(
+            const Text(
+              'Session settings',
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 4),
-            if (_isEditing)
-              Text(
-                'Original date: ${_formatDate(_editingSession!.date)}',
-                style: const TextStyle(fontSize: 13),
-              ),
-            if (_isEditing) const SizedBox(height: 8),
+            const SizedBox(height: 8),
             Row(
               children: [
                 const Expanded(
@@ -258,7 +274,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
                 setState(() {
                   _useTimer = v;
                   if (!v) {
-                    // Nullstill timer hvis vi slår den av
+                    // reset timer if we turn it off
                     _timer?.cancel();
                     _isTimerRunning = false;
                     _remainingSeconds = 0;
@@ -273,7 +289,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
-  /// Start nedtelling med gitt antall sekunder
+  /// Start countdown with given number of seconds
   void _startTimer(int seconds) {
     if (_isTimerRunning) return;
     if (seconds <= 0) {
@@ -305,15 +321,9 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     });
   }
 
-  /// Felles lagrefunksjon: nå KUN manuell (både ny og redigert økt)
+  /// Save (new or edited) session manually.
+  /// This is called from the explicit "Save session" button only.
   Future<void> _saveSession() async {
-    // Stopp eventuell timer, vi er ferdige med økten
-    _timer?.cancel();
-    setState(() {
-      _isTimerRunning = false;
-      _remainingSeconds = 0;
-    });
-
     final List<ExerciseSet> sets = [];
 
     for (int i = 0; i < 3; i++) {
@@ -332,43 +342,91 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       );
     }
 
-    ExerciseSession session;
-    if (_isEditing) {
-      // Behold id og dato, oppdater sett
-      final base = _editingSession!;
-      session = ExerciseSession(
-        id: base.id,
-        exerciseId: base.exerciseId,
-        date: base.date,
+    if (_isEditing && _editingSession != null) {
+      // Update existing session (keep original id and date)
+      final updated = ExerciseSession(
+        id: _editingSession!.id,
+        exerciseId: _editingSession!.exerciseId,
+        date: _editingSession!.date,
         sets: sets,
       );
-      await _storage.updateSession(session);
+      await _storage.updateSession(updated);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session updated')),
+      );
+      Navigator.of(context).pop(true);
     } else {
-      session = ExerciseSession(
+      // Create new session
+      final session = ExerciseSession(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         exerciseId: widget.exercise.id,
         date: DateTime.now(),
         sets: sets,
       );
+
       await _storage.addSession(session);
+
+      setState(() {
+        _lastSession = session;
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Exercise completed and saved')),
+      );
+
+      Navigator.of(context).pop(true);
+    }
+  }
+
+  Future<void> _discardSessionWithConfirm() async {
+    // If absolutely nothing is filled, we can just pop without dialog if desired.
+    final hasAnyInput = _weightControllers.any((c) => c.text.trim().isNotEmpty) ||
+        _repsControllers.any((c) => c.text.trim().isNotEmpty);
+
+    bool shouldAsk = hasAnyInput || _isEditing;
+
+    if (!shouldAsk) {
+      _timer?.cancel();
+      _isTimerRunning = false;
+      if (!mounted) return;
+      Navigator.of(context).pop(false);
+      return;
     }
 
-    setState(() {
-      _lastSession = session;
-      _editingSession = session;
-    });
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          _isEditing ? 'Session updated' : 'Exercise completed and saved',
-        ),
-      ),
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Discard session'),
+          content: const Text(
+            'Do you want to discard this session without saving?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Discard'),
+            ),
+          ],
+        );
+      },
     );
 
-    Navigator.of(context).pop(); // back to previous page
+    if (confirm != true) return;
+
+    _timer?.cancel();
+    _isTimerRunning = false;
+    _remainingSeconds = 0;
+    _currentSet = 1;
+
+    if (!mounted) return;
+    Navigator.of(context).pop(false);
   }
 
   Widget _buildSetRow(int index) {
@@ -429,7 +487,9 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
             Text(
               _isTimerRunning
                   ? '$_remainingSeconds sec'
-                  : 'Ready for next set',
+                  : (_currentSet <= 3
+                      ? 'Ready for set $_currentSet'
+                      : 'All sets done'),
               style: const TextStyle(fontSize: 22),
             ),
             const SizedBox(height: 12),
@@ -441,28 +501,30 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
                           ? 0
                           : _pauseMinutes * 60;
 
-                      if (totalSeconds > 0) {
-                        _startTimer(totalSeconds);
-                      }
-
-                      setState(() {
-                        if (_currentSet < 3) {
+                      // Just handle rest between sets; saving is manual now.
+                      if (_currentSet < 3) {
+                        if (totalSeconds > 0) {
+                          _startTimer(totalSeconds);
+                        }
+                        setState(() {
                           _currentSet++;
-                        } else {
-                          // Alle sett er i praksis ferdige,
-                          // bare gi en påminnelse om manuell lagring.
+                        });
+                      } else {
+                        // All sets done; optional rest but no auto-save
+                        if (totalSeconds > 0) {
+                          _startTimer(totalSeconds);
+                        }
+                        if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text(
-                                'All sets done. Remember to save the session.',
-                              ),
+                              content: Text('All sets completed. Remember to save the session.'),
                             ),
                           );
                         }
-                      });
+                      }
                     },
               icon: const Icon(Icons.timer),
-              label: const Text('Start'),
+              label: const Text('Start rest'),
             ),
           ],
         ),
@@ -470,29 +532,23 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
-  /// Lagre / avbryt-knapper – alltid tilgjengelig,
-  /// uansett om timeren er på eller ikke.
-  Widget _buildSaveButtons() {
+  Widget _buildActionButtons() {
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
           Expanded(
-            child: OutlinedButton(
-              onPressed: () {
-                // Avbryt økten uten å lagre
-                Navigator.of(context).pop();
-              },
-              child: const Text('Discard'),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
             child: ElevatedButton.icon(
               onPressed: _saveSession,
               icon: const Icon(Icons.check),
-              label: Text(_isEditing ? 'Update session' : 'Save session'),
+              label: Text(_isEditing ? 'Save changes' : 'Save session'),
             ),
+          ),
+          const SizedBox(width: 12),
+          TextButton.icon(
+            onPressed: _discardSessionWithConfirm,
+            icon: const Icon(Icons.close),
+            label: const Text('Discard'),
           ),
         ],
       ),
@@ -528,12 +584,13 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       ),
       body: ListView(
         children: [
+          _buildEditingBanner(),
           _buildLastSessionCard(),
           _buildProgressionHint(),
           _buildSessionSettingsCard(),
           for (int i = 1; i <= 3; i++) _buildSetRow(i),
           _buildTimerCard(),
-          _buildSaveButtons(),
+          _buildActionButtons(),
         ],
       ),
     );
