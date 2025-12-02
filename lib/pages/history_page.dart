@@ -78,31 +78,9 @@ class _HistoryPageState extends State<HistoryPage> {
     return total;
   }
 
-  Future<void> _openSessionForEdit(
-    Exercise exercise,
-    ExerciseSession session,
-  ) async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (context) => ExerciseDetailPage(
-          exercise: exercise,
-          initialSession: session,
-        ),
-      ),
-    );
-
-    if (result == true) {
-      await _loadHistory();
-    }
-  }
-
   Widget _buildExerciseCard(_ExerciseHistory item) {
     final exercise = item.exercise;
     final sessions = item.sessions;
-
-    if (sessions.isEmpty) {
-      return const SizedBox.shrink();
-    }
 
     // Vis kun de 3 siste øktene for å unngå gigantisk liste
     final visibleSessions = sessions.length <= 3
@@ -115,87 +93,73 @@ class _HistoryPageState extends State<HistoryPage> {
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: InkWell(
-        // Trykk hvor som helst på kortet -> rediger siste økt
-        onTap: () => _openSessionForEdit(exercise, latest),
-        borderRadius: BorderRadius.circular(4),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Tittel: navn på øvelse + dato for siste økt
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${exercise.name} – last: ${_formatDate(latest.date)}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Tittel: navn på øvelse + dato for siste økt
+            Text(
+              '${exercise.name} – last: ${_formatDate(latest.date)}',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Showing $visibleCount of $totalCount sessions',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Liste over (maks) 3 nyeste økter
+            for (final session in visibleSessions)
+              InkWell(
+                onTap: () async {
+                  // Åpne detaljside for å redigere akkurat denne økten
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => ExerciseDetailPage(
+                        exercise: exercise,
+                        initialSession: session,
                       ),
                     ),
-                  ),
-                  const Icon(
-                    Icons.edit,
-                    size: 18,
-                    color: Colors.blueGrey,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Showing $visibleCount of $totalCount sessions',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Liste over (maks) 3 nyeste økter – hver rad kan også trykkes
-              for (final session in visibleSessions)
-                InkWell(
-                  onTap: () => _openSessionForEdit(exercise, session),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '${_formatDate(session.date)} – '
-                                '${_calculateTotalVolume(session).toStringAsFixed(0)} kg total',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const Icon(
-                              Icons.edit,
-                              size: 14,
-                              color: Colors.blueGrey,
-                            ),
-                          ],
+                  );
+                  await _loadHistory();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${_formatDate(session.date)} – '
+                        '${_calculateTotalVolume(session).toStringAsFixed(0)} kg total',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
                         ),
-                        const SizedBox(height: 2),
-                        for (final set in session.sets)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 1),
-                            child: Text(
-                              'Set ${set.setIndex}: ${set.weightKg} kg x ${set.reps} reps',
-                              style: const TextStyle(fontSize: 13),
-                            ),
+                      ),
+                      const SizedBox(height: 2),
+                      for (final set in session.sets)
+                        Padding(
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 1),
+                          child: Text(
+                            'Set ${set.setIndex}: '
+                            '${set.weightKg} kg x ${set.reps} reps',
+                            style: const TextStyle(fontSize: 13),
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );
