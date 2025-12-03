@@ -92,16 +92,30 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
         }
       }
     } else {
-      // New session: keep controllers empty (user fills them)
+      // New session: initially empty
       for (int i = 0; i < 3; i++) {
         _weightControllers[i].text = '';
         _repsControllers[i].text = '';
       }
     }
 
-    // Independent of editing/new, we still fetch the last session for display
+    // Fetch last session for display
     final last =
         await _storage.getLastSessionForExercise(widget.exercise.id);
+
+    // If creating a new session and there is a last session, prefill from it
+    if (widget.initialSession == null && last != null) {
+      final sets = last.sets;
+      for (int i = 0; i < 3; i++) {
+        if (i < sets.length) {
+          _weightControllers[i].text = sets[i].weightKg.toString();
+          _repsControllers[i].text = sets[i].reps.toString();
+        } else {
+          _weightControllers[i].text = '';
+          _repsControllers[i].text = '';
+        }
+      }
+    }
 
     setState(() {
       _lastSession = last;
@@ -383,8 +397,9 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
 
   Future<void> _discardSessionWithConfirm() async {
     // If absolutely nothing is filled, we can just pop without dialog if desired.
-    final hasAnyInput = _weightControllers.any((c) => c.text.trim().isNotEmpty) ||
-        _repsControllers.any((c) => c.text.trim().isNotEmpty);
+    final hasAnyInput =
+        _weightControllers.any((c) => c.text.trim().isNotEmpty) ||
+            _repsControllers.any((c) => c.text.trim().isNotEmpty);
 
     bool shouldAsk = hasAnyInput || _isEditing;
 
@@ -497,9 +512,8 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
               onPressed: _isTimerRunning
                   ? null
                   : () {
-                      final totalSeconds = _pauseMinutes <= 0
-                          ? 0
-                          : _pauseMinutes * 60;
+                      final totalSeconds =
+                          _pauseMinutes <= 0 ? 0 : _pauseMinutes * 60;
 
                       // Just handle rest between sets; saving is manual now.
                       if (_currentSet < 3) {
@@ -517,7 +531,9 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('All sets completed. Remember to save the session.'),
+                              content: Text(
+                                'All sets completed. Remember to save the session.',
+                              ),
                             ),
                           );
                         }
@@ -596,4 +612,3 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 }
-

@@ -1,140 +1,126 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
-import '../services/backup_service.dart';
-import 'exercise_detail_page.dart';
-import 'history_page.dart';
+import 'exercise_history_page.dart';
 
-enum _MenuAction {
-  exportData,
-  importData,
-}
+class ExerciseDetailPage extends StatefulWidget {
+  final Exercise exercise;
 
-class ExerciseListPage extends StatefulWidget {
-  const ExerciseListPage({super.key});
+  /// If this is provided, the page will open in "edit existing session" mode.
+  final ExerciseSession? initialSession;
+
+  const ExerciseDetailPage({
+    super.key,
+    required this.exercise,
+    this.initialSession,
+  });
 
   @override
-  State<ExerciseListPage> createState() => _ExerciseListPageState();
+  State<ExerciseDetailPage> createState() => _ExerciseDetailPageState();
 }
 
-class _ExerciseListPageState extends State<ExerciseListPage> {
+class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   final TrainingStorageService _storage = TrainingStorageService();
-  final BackupService _backupService = BackupService();
 
-  List<Exercise> _exercises = [];
-  final Map<String, ExerciseSession?> _lastSessions = {};
+  ExerciseSession? _lastSession; // last recorded session for this exercise
+  ExerciseSession? _editingSession; // non-null when editing an existing one
   bool _isLoading = true;
+
+  bool get _isEditing => _editingSession != null;
+
+  // controllers for 3 sets
+  final List<TextEditingController> _weightControllers = List.generate(
+    3,
+    (_) => TextEditingController(),
+  );
+  final List<TextEditingController> _repsControllers = List.generate(
+    3,
+    (_) => TextEditingController(),
+  );
+
+  // Pause settings and optional timer
+  bool _useTimer = true;
+  int _pauseMinutes = 1;
+  final TextEditingController _pauseController =
+      TextEditingController(text: '1');
+
+  Timer? _timer;
+  int _remainingSeconds = 60;
+  bool _isTimerRunning = false;
+
+  int _currentSet = 1; // 1..3
 
   @override
   void initState() {
     super.initState();
-    _loadExercises();
+    _loadData();
   }
 
-  Future<void> _loadExercises() async {
+  @override
+  void dispose() {
+    _timer?.cancel();
+    for (final c in _weightControllers) {
+      c.dispose();
+    }
+    for (final c in _repsControllers) {
+      c.dispose();
+    }
+    _pauseController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
     });
 
-    final exercises = await _storage.loadExercises();
-    final Map<String, ExerciseSession?> lastMap = {};
+    // If we came from HistoryPage with an existing session, set editing mode
+    if (widget.initialSession != null) {
+      _editingSession = widget.initialSession;
 
-    for (final ex in exercises) {
-      lastMap[ex.id] = await _storage.getLastSessionForExercise(ex.id);
+      // Prefill controllers from the session we are editing
+      final sets = widget.initialSession!.sets;
+      for (int i = 0; i < 3; i++) {
+        if (i < sets.length) {
+          _weightControllers[i].text = sets[i].weightKg.toString();
+          _repsControllers[i].text = sets[i].reps.toString();
+        } else {
+          _weightControllers[i].text = '';
+          _repsControllers[i].text = '';
+        }
+      }
+    } else {
+      // New session: keep controllers empty for now
+      for (int i = 0; i < 3; i++) {
+        _weightControllers[i].text = '';
+        _repsControllers[i].text = '';
+      }
+    }
+
+    // Independent of editing/new, we still fetch the last session for display
+    final last =
+        await _storage.getLastSessionForExercise(widget.exercise.id);
+
+    // If creating a new session and there is a last session, prefill fields from it
+    if (widget.initialSession == null && last != null) {
+      final sets = last.sets;
+      for (int i = 0; i < 3; i++) {
+        if (i < sets.length) {
+          _weightControllers[i].text = sets[i].weightKg.toString();
+          _repsControllers[i].text = sets[i].reps.toString();
+        } else {
+          _weightControllers[i].text = '';
+          _repsControllers[i].text = '';
+        }
+      }
     }
 
     setState(() {
-      _exercises = exercises;
-      _lastSessions
-        ..clear()
-        ..addAll(lastMap);
+      _lastSession = last;
       _isLoading = false;
     });
-  }
-
-  Future<void> _showExerciseDialog({Exercise? exercise}) async {
-    final isEditing = exercise != null;
-    final controller = TextEditingController(text: exercise?.name ?? '');
-
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(isEditing ? 'Edit exercise' : 'New exercise'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Exercise name',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(null);
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final name = controller.text.trim();
-                if (name.isEmpty) {
-                  return;
-                }
-                Navigator.of(context).pop(name);
-              },
-              child: Text(isEditing ? 'Save' : 'Add'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (result == null) {
-      return;
-    }
-
-    if (isEditing) {
-      final updated = Exercise(id: exercise!.id, name: result);
-      await _storage.updateExercise(updated);
-    } else {
-      await _storage.addExercise(result);
-    }
-
-    await _loadExercises();
-  }
-
-  Future<void> _confirmDeleteExercise(Exercise exercise) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Delete exercise'),
-          content: Text(
-            'Are you sure you want to delete "${exercise.name}"?\n\n'
-            'All sessions for this exercise will also be removed.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirm != true) {
-      return;
-    }
-
-    await _storage.deleteExercise(exercise.id);
-    await _loadExercises();
   }
 
   String _formatDate(DateTime date) {
@@ -144,238 +130,483 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     return '$y-$m-$d';
   }
 
-  String _formatSet(int index, ExerciseSession session) {
-    final set = session.sets
-        .where((s) => s.setIndex == index)
-        .cast<ExerciseSet?>()
-        .firstWhere(
-          (s) => s != null,
-          orElse: () => null,
-        );
-
-    if (set == null) {
-      return '–';
-    }
-
-    return '${set.weightKg} kg x ${set.reps}';
-  }
-
   bool _isReadyToIncrease(ExerciseSession? session) {
     if (session == null) return false;
     if (session.sets.length < 3) return false;
-    // Alle 3 sett må ha 12 eller flere reps
     return session.sets.every((s) => s.reps >= 12);
   }
 
-  Widget _buildSubtitle(Exercise exercise) {
-    final last = _lastSessions[exercise.id];
-    if (last == null) {
-      return const Text('No sessions yet.');
+  double _calculateTotalVolume(ExerciseSession session) {
+    double total = 0;
+    for (final set in session.sets) {
+      total += set.weightKg * set.reps;
     }
-
-    final dateStr = _formatDate(last.date);
-    final s1 = _formatSet(1, last);
-    final s2 = _formatSet(2, last);
-    final s3 = _formatSet(3, last);
-
-    final ready = _isReadyToIncrease(last);
-    final extraLine = ready ? '\nReady to increase weight' : '';
-
-    return Text(
-      'Last: $dateStr\n'
-      'S1: $s1 | S2: $s2 | S3: $s3$extraLine',
-      style: const TextStyle(fontSize: 13),
-    );
+    return total;
   }
 
-  Widget _buildBody() {
-    if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-
-    if (_exercises.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'No exercises yet.',
-              style: TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: () => _showExerciseDialog(),
-              icon: const Icon(Icons.add),
-              label: const Text('Add first exercise'),
-            ),
-          ],
+  Widget _buildLastSessionCard() {
+    if (_lastSession == null) {
+      return const Card(
+        margin: EdgeInsets.all(12),
+        child: Padding(
+          padding: EdgeInsets.all(12),
+          child: Text(
+            'No previous session for this exercise yet.',
+            style: TextStyle(fontSize: 14),
+          ),
         ),
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _loadExercises,
-      child: ListView.builder(
-        itemCount: _exercises.length,
-        itemBuilder: (context, index) {
-          final exercise = _exercises[index];
-          final last = _lastSessions[exercise.id];
-          final ready = _isReadyToIncrease(last);
-
-          return ListTile(
-            leading: ready
-                ? const Icon(Icons.trending_up, color: Colors.greenAccent)
-                : const Icon(Icons.fitness_center),
-            title: Text(exercise.name),
-            subtitle: _buildSubtitle(exercise),
-            onTap: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) =>
-                      ExerciseDetailPage(exercise: exercise),
-                ),
-              );
-              await _loadExercises();
-            },
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: 'Edit',
-                  icon: const Icon(Icons.edit),
-                  onPressed: () => _showExerciseDialog(exercise: exercise),
-                ),
-                IconButton(
-                  tooltip: 'Delete',
-                  icon: const Icon(Icons.delete),
-                  onPressed: () => _confirmDeleteExercise(exercise),
-                ),
-              ],
+    final last = _lastSession!;
+    return Card(
+      margin: const EdgeInsets.all(12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Last session: ${_formatDate(last.date)}',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          );
-        },
+            const SizedBox(height: 8),
+            Text(
+              'Total volume: ${_calculateTotalVolume(last).toStringAsFixed(0)} kg',
+              style: const TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            for (final set in last.sets)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text(
+                  'Set ${set.setIndex}: ${set.weightKg} kg x ${set.reps} reps',
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  void _openHistory() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const HistoryPage(),
-      ),
-    );
-    await _loadExercises();
-  }
-
-  Future<void> _handleMenuAction(_MenuAction action) async {
-    switch (action) {
-      case _MenuAction.exportData:
-        try {
-          await _backupService.exportBackup();
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Backup opprettet – fullfør i delingsmenyen.'),
-            ),
-          );
-        } catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Feil ved eksport: $e'),
-            ),
-          );
-        }
-        break;
-
-      case _MenuAction.importData:
-        // Bekreft at vi skal overskrive alt
-        final confirm = await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: const Text('Import data'),
-              content: const Text(
-                'Import vil erstatte alle eksisterende øvelser og økter '
-                'med innholdet fra backup-filen.\n\n'
-                'Er du sikker på at du vil fortsette?',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Import'),
-                ),
-              ],
-            );
-          },
-        );
-
-        if (confirm != true) {
-          return;
-        }
-
-        try {
-          final ok = await _backupService.importBackup();
-          if (!mounted) return;
-
-          if (ok) {
-            await _loadExercises();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Data importert.'),
-              ),
-            );
-          }
-        } catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Feil ved import: $e'),
-            ),
-          );
-        }
-        break;
+  Widget _buildEditingBanner() {
+    if (!_isEditing || _editingSession == null) {
+      return const SizedBox.shrink();
     }
+
+    final dateStr = _formatDate(_editingSession!.date);
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      color: Colors.amber.withOpacity(0.2),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Text(
+          'You are editing a previous session from $dateStr.\n'
+          'Saving will overwrite this session.',
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProgressionHint() {
+    if (!_isReadyToIncrease(_lastSession)) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      color: Colors.green.withOpacity(0.2),
+      child: const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text(
+          'Last time you hit 12 reps on all 3 sets.\n'
+          'You can increase the weight for this exercise.',
+          style: TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+  }
+
+  /// Card for session settings (rest time and timer on/off)
+  Widget _buildSessionSettingsCard() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Session settings',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Rest time (minutes)',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                ),
+                SizedBox(
+                  width: 80,
+                  child: TextField(
+                    controller: _pauseController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Minutes',
+                    ),
+                    onChanged: (value) {
+                      final parsed = int.tryParse(value.trim()) ?? 0;
+                      final sanitized = parsed < 0 ? 0 : parsed;
+                      setState(() {
+                        _pauseMinutes = sanitized;
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Use rest timer',
+                style: TextStyle(fontSize: 14),
+              ),
+              value: _useTimer,
+              onChanged: (v) {
+                setState(() {
+                  _useTimer = v;
+                  if (!v) {
+                    // reset timer if we turn it off
+                    _timer?.cancel();
+                    _isTimerRunning = false;
+                    _remainingSeconds = 0;
+                    _currentSet = 1;
+                  }
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Start countdown with given number of seconds
+  void _startTimer(int seconds) {
+    if (_isTimerRunning) return;
+    if (seconds <= 0) {
+      setState(() {
+        _isTimerRunning = false;
+        _remainingSeconds = 0;
+      });
+      return;
+    }
+
+    setState(() {
+      _isTimerRunning = true;
+      _remainingSeconds = seconds;
+    });
+
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_remainingSeconds == 0) {
+        timer.cancel();
+        setState(() {
+          _isTimerRunning = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _remainingSeconds--;
+      });
+    });
+  }
+
+  /// Save (new or edited) session manually.
+  /// This is called from the explicit "Save session" button only.
+  Future<void> _saveSession() async {
+    final List<ExerciseSet> sets = [];
+
+    for (int i = 0; i < 3; i++) {
+      final weightStr = _weightControllers[i].text.trim();
+      final repsStr = _repsControllers[i].text.trim();
+
+      final weight = double.tryParse(weightStr) ?? 0;
+      final reps = int.tryParse(repsStr) ?? 0;
+
+      sets.add(
+        ExerciseSet(
+          setIndex: i + 1,
+          weightKg: weight,
+          reps: reps,
+        ),
+      );
+    }
+
+    if (_isEditing && _editingSession != null) {
+      // Update existing session (keep original id and date)
+      final updated = ExerciseSession(
+        id: _editingSession!.id,
+        exerciseId: _editingSession!.exerciseId,
+        date: _editingSession!.date,
+        sets: sets,
+      );
+      await _storage.updateSession(updated);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session updated')),
+      );
+      Navigator.of(context).pop(true);
+    } else {
+      // Create new session
+      final session = ExerciseSession(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        exerciseId: widget.exercise.id,
+        date: DateTime.now(),
+        sets: sets,
+      );
+
+      await _storage.addSession(session);
+
+      setState(() {
+        _lastSession = session;
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Exercise completed and saved')),
+      );
+
+      Navigator.of(context).pop(true);
+    }
+  }
+
+  Future<void> _discardSessionWithConfirm() async {
+    // If absolutely nothing is filled, we can just pop without dialog if desired.
+    final hasAnyInput = _weightControllers.any((c) => c.text.trim().isNotEmpty) ||
+        _repsControllers.any((c) => c.text.trim().isNotEmpty);
+
+    bool shouldAsk = hasAnyInput || _isEditing;
+
+    if (!shouldAsk) {
+      _timer?.cancel();
+      _isTimerRunning = false;
+      if (!mounted) return;
+      Navigator.of(context).pop(false);
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Discard session'),
+          content: const Text(
+            'Do you want to discard this session without saving?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Discard'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true) return;
+
+    _timer?.cancel();
+    _isTimerRunning = false;
+    _remainingSeconds = 0;
+    _currentSet = 1;
+
+    if (!mounted) return;
+    Navigator.of(context).pop(false);
+  }
+
+  Widget _buildSetRow(int index) {
+    final isCurrent = _useTimer && (_currentSet == index);
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      decoration: BoxDecoration(
+        color: isCurrent ? Colors.blue.withOpacity(0.1) : Colors.black26,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isCurrent ? Colors.blue : Colors.grey,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(width: 50, child: Text('Set $index')),
+          Expanded(
+            child: TextField(
+              controller: _weightControllers[index - 1],
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'kg'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: _repsControllers[index - 1],
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: false),
+              decoration: const InputDecoration(labelText: 'reps'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimerCard() {
+    if (!_useTimer) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      margin: const EdgeInsets.all(12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Text(
+              'Rest timer (${_pauseMinutes} min)',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _isTimerRunning
+                  ? '$_remainingSeconds sec'
+                  : (_currentSet <= 3
+                      ? 'Ready for set $_currentSet'
+                      : 'All sets done'),
+              style: const TextStyle(fontSize: 22),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _isTimerRunning
+                  ? null
+                  : () {
+                      final totalSeconds = _pauseMinutes <= 0
+                          ? 0
+                          : _pauseMinutes * 60;
+
+                      // Just handle rest between sets; saving is manual now.
+                      if (_currentSet < 3) {
+                        if (totalSeconds > 0) {
+                          _startTimer(totalSeconds);
+                        }
+                        setState(() {
+                          _currentSet++;
+                        });
+                      } else {
+                        // All sets done; optional rest but no auto-save
+                        if (totalSeconds > 0) {
+                          _startTimer(totalSeconds);
+                        }
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  'All sets completed. Remember to save the session.'),
+                            ),
+                          );
+                        }
+                      }
+                    },
+              icon: const Icon(Icons.timer),
+              label: const Text('Start rest'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons() {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _saveSession,
+              icon: const Icon(Icons.check),
+              label: Text(_isEditing ? 'Save changes' : 'Save session'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          TextButton.icon(
+            onPressed: _discardSessionWithConfirm,
+            icon: const Icon(Icons.close),
+            label: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('styrketrening'),
+        title: Text(widget.exercise.name),
         centerTitle: true,
         actions: [
           IconButton(
-            tooltip: 'History',
+            tooltip: 'Full history',
             icon: const Icon(Icons.history),
-            onPressed: _openHistory,
-          ),
-          PopupMenuButton<_MenuAction>(
-            onSelected: _handleMenuAction,
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: _MenuAction.exportData,
-                child: Text('Eksporter data'),
-              ),
-              PopupMenuItem(
-                value: _MenuAction.importData,
-                child: Text('Importer data'),
-              ),
-            ],
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) =>
+                      ExerciseHistoryPage(exercise: widget.exercise),
+                ),
+              );
+            },
           ),
         ],
       ),
-      body: _buildBody(),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showExerciseDialog(),
-        icon: const Icon(Icons.add),
-        label: const Text('New exercise'),
+      body: ListView(
+        children: [
+          _buildEditingBanner(),
+          _buildLastSessionCard(),
+          _buildProgressionHint(),
+          _buildSessionSettingsCard(),
+          for (int i = 1; i <= 3; i++) _buildSetRow(i),
+          _buildTimerCard(),
+          _buildActionButtons(),
+        ],
       ),
     );
   }
