@@ -26,10 +26,12 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
   final Map<String, ExerciseSession?> _lastSessions = {};
   bool _isLoading = true;
 
+  bool _autoBackupChecked = false;
+
   @override
   void initState() {
     super.initState();
-    _loadExercises();
+    _loadExercises().then((_) => _checkAutoBackup());
   }
 
   // ============================
@@ -81,6 +83,69 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
   }
 
   // ============================
+  // AUTO BACKUP (ukentlig)
+  // ============================
+
+  Future<void> _checkAutoBackup() async {
+    if (_autoBackupChecked) return;
+    _autoBackupChecked = true;
+
+    // Ingen vits i å mase om backup hvis du ikke har noen økter ennå
+    final allSessions = await _storage.loadSessions();
+    if (allSessions.isEmpty) {
+      return;
+    }
+
+    final lastBackup = await _storage.getLastBackupDate();
+    final now = DateTime.now();
+
+    // Hvis vi har en backup, bare mas hvis det er 7+ dager siden
+    if (lastBackup != null) {
+      final diffDays = now.difference(lastBackup).inDays;
+      if (diffDays < 7) {
+        return;
+      }
+    }
+
+    if (!mounted) return;
+
+    final daysSince =
+        lastBackup == null ? null : now.difference(lastBackup).inDays;
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final message = lastBackup == null
+            ? 'You have training data but no backup yet.\n\nDo you want to export a backup now?'
+            : 'It has been $daysSince days since your last backup.\n\nDo you want to export a backup now?';
+
+        return AlertDialog(
+          title: const Text('Backup reminder'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Not now'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Backup now'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _backup.exportBackup();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Backup exported')),
+      );
+    }
+  }
+
+  // ============================
   // FORMATTERING / LOGIKK
   // ============================
 
@@ -108,18 +173,6 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     return session.sets.every((s) => s.reps >= 12);
   }
 
-  /// Antall dager siden siste økt for en øvelse.
-  /// Returnerer null hvis ingen økter ennå.
-  int? _daysSinceLastSession(Exercise exercise) {
-    final last = _lastSessions[exercise.id];
-    if (last == null) return null;
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final lastDay = DateTime(last.date.year, last.date.month, last.date.day);
-    return today.difference(lastDay).inDays;
-  }
-
   Widget _buildSubtitle(Exercise exercise) {
     final last = _lastSessions[exercise.id];
     if (last == null) {
@@ -127,6 +180,13 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     }
 
     final dateStr = _formatDate(last.date);
+
+    // Days since last session (dato til dato, ikke timer)
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final lastDay = DateTime(last.date.year, last.date.month, last.date.day);
+    final daysSince = today.difference(lastDay).inDays;
+
     final s1 = _formatSet(1, last);
     final s2 = _formatSet(2, last);
     final s3 = _formatSet(3, last);
@@ -135,32 +195,9 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     final extraLine = ready ? '\nReady to increase weight' : '';
 
     return Text(
-      'Last: $dateStr\n'
+      'Last: $dateStr ($daysSince days ago)\n'
       'S1: $s1 | S2: $s2 | S3: $s3$extraLine',
       style: const TextStyle(fontSize: 13),
-    );
-  }
-
-  Widget _buildDaysBadge(int? daysSince) {
-    if (daysSince == null) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      margin: const EdgeInsets.only(right: 4),
-      decoration: BoxDecoration(
-        color: Colors.blueGrey.shade700,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        '$daysSince',
-        style: const TextStyle(
-          fontSize: 12,
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
     );
   }
 
@@ -194,7 +231,6 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
           final exercise = _exercises[index];
           final last = _lastSessions[exercise.id];
           final ready = _isReadyToIncrease(last);
-          final daysSince = _daysSinceLastSession(exercise);
 
           return ListTile(
             leading: ready
@@ -214,7 +250,6 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildDaysBadge(daysSince),
                 IconButton(
                   tooltip: 'Edit',
                   icon: const Icon(Icons.edit),

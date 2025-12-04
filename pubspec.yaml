@@ -1,5 +1,5 @@
 name: styrketrening
-description: "A new Flutter project."
+description: "Karo's styrketrening – enkel og tydelig treningslogg i Karo-universet."
 publish_to: 'none'
 
 version: 1.0.2+5
@@ -45,3 +45,4 @@ flutter_native_splash:
   ios: true
   android_12:
     image: assets/splash/splash.png
+

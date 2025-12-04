@@ -8,152 +8,119 @@ import 'package:share_plus/share_plus.dart';
 import '../models/training_models.dart';
 import 'training_storage_service.dart';
 
-/// Håndterer eksport og import av alle øvelser og treningsøkter.
-///
-/// Format (version 1):
-/// {
-///   "version": 1,
-///   "exportedAt": "2025-11-19T08:31:00.000Z",
-///   "exercises": [ ... ],
-///   "sessions": [ ... ]
-/// }
 class BackupService {
-  final TrainingStorageService _storage;
+  final TrainingStorageService _storage = TrainingStorageService();
 
-  BackupService({TrainingStorageService? storage})
-      : _storage = storage ?? TrainingStorageService();
+  /// Hvor ofte vi vil minne brukeren om backup.
+  /// 30 dager ~ ca. 1 gang i måneden.
+  static const Duration backupReminderInterval = Duration(days: 30);
 
-  /// Bygger et JSON-kart med hele databasen (øvelser + økter).
-  Future<Map<String, dynamic>> _buildBackupMap() async {
+  /// Sjekker om det er på tide med en backup-paminnelse.
+  ///
+  /// - Returnerer true hvis:
+  ///   - vi aldri har tatt backup (ingen dato lagret), eller
+  ///   - det har gaatt minst [backupReminderInterval] siden sist backup.
+  /// - Returnerer false ellers.
+  Future<bool> shouldShowBackupReminder() async {
+    final last = await _storage.getLastBackupDate();
+    if (last == null) {
+      // Aldri tatt backup -> vis paminnelse
+      return true;
+    }
+
+    final now = DateTime.now();
+    final diff = now.difference(last);
+
+    return diff >= backupReminderInterval;
+  }
+
+  /// Eksporterer alle ovelser og sessions som en JSON-fil.
+  ///
+  /// Format (root-objekt):
+  /// {
+  ///   "version": 1,
+  ///   "exportedAt": "2025-01-01T12:34:56.000Z",
+  ///   "exercises": [ ... ],
+  ///   "sessions":  [ ... ]
+  /// }
+  Future<void> exportBackup() async {
+    // 1. Hent data
     final exercises = await _storage.loadExercises();
     final sessions = await _storage.loadSessions();
 
-    return <String, dynamic>{
+    // 2. Bygg JSON-struktur
+    final nowUtc = DateTime.now().toUtc();
+    final Map<String, dynamic> root = {
       'version': 1,
-      'exportedAt': DateTime.now().toUtc().toIso8601String(),
+      'exportedAt': nowUtc.toIso8601String(),
       'exercises': exercises.map((e) => e.toJson()).toList(),
       'sessions': sessions.map((s) => s.toJson()).toList(),
     };
-  }
 
-  /// Eksporterer alle øvelser og økter til en JSON-fil og åpner delingsvindu.
-  Future<void> exportBackup() async {
-    // 1. Bygg komplett JSON
-    final backupMap = await _buildBackupMap();
-    final jsonString = const JsonEncoder.withIndent('  ').convert(backupMap);
+    final jsonString = const JsonEncoder.withIndent('  ').convert(root);
 
-    // 2. Lag midlertidig fil
-    final dir = await getTemporaryDirectory();
-    final timestamp =
-        DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
-    final filename = 'styrketrening_backup_$timestamp.json';
-    final filePath = '${dir.path}/$filename';
+    // 3. Lag midlertidig fil
+    final suggestedFileName =
+        'styrketrening_backup_${nowUtc.year}-${nowUtc.month.toString().padLeft(2, '0')}-${nowUtc.day.toString().padLeft(2, '0')}_${nowUtc.hour.toString().padLeft(2, '0')}-${nowUtc.minute.toString().padLeft(2, '0')}.json';
 
-    final file = File(filePath);
-    await file.writeAsString(jsonString);
+    final tmpDirPath = (await getTemporaryDirectory()).path;
+    final outFile = File('$tmpDirPath/$suggestedFileName');
+    await outFile.writeAsBytes(utf8.encode(jsonString));
 
-    // 3. Del filen via systemets delingsmeny
-    final xFile = XFile(
-      file.path,
-      mimeType: 'application/json',
-      name: filename,
-    );
-
+    // 4. Del filen (bruker velger hvor den havner)
     await Share.shareXFiles(
-      [xFile],
+      [XFile(outFile.path)],
       subject: 'Styrketrening backup',
-      text: 'Backup av øvelser og treningsøkter fra app styrketrening.',
+      text: 'Here is the exported training data JSON.',
     );
+
+    // 5. Marker at vi na har tatt backup (bruk lokal tid til paminnelseslogikk)
+    await _storage.setLastBackupDate(DateTime.now());
   }
 
-  /// Importerer en backup-fil valgt via filvelger.
+  /// Importerer en tidligere eksportert JSON-fil.
   ///
-  /// Returnerer:
-  /// - true  => import gjennomført og lagret
-  /// - false => bruker avbrøt (ingen endring gjort)
-  ///
-  /// Eksisterende øvelser og økter blir erstattet.
+  /// Returnerer true hvis importen gikk bra, false hvis brukeren avbrot
+  /// eller noe var feil.
   Future<bool> importBackup() async {
-    // 1. La brukeren velge JSON-fil
+    // 1. La brukeren velge fil
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['json'],
-      allowMultiple: false,
+      withData: true,
     );
 
     if (result == null || result.files.isEmpty) {
-      // Bruker avbrøt
+      return false; // avbrutt
+    }
+
+    final fileBytes = result.files.first.bytes;
+    if (fileBytes == null) {
       return false;
     }
 
-    final path = result.files.single.path;
-    if (path == null) {
-      throw Exception('Kunne ikke lese valgt fil (mangler path).');
+    final jsonString = utf8.decode(fileBytes);
+
+    // 2. Parse JSON
+    late Map<String, dynamic> root;
+    try {
+      root = jsonDecode(jsonString) as Map<String, dynamic>;
+    } catch (_) {
+      return false;
     }
 
-    final file = File(path);
-    if (!await file.exists()) {
-      throw Exception('Valgt fil finnes ikke lenger.');
-    }
+    // 3. Les arrays
+    final exercisesJson = root['exercises'] as List<dynamic>? ?? <dynamic>[];
+    final sessionsJson = root['sessions'] as List<dynamic>? ?? <dynamic>[];
 
-    // 2. Les og parse JSON
-    final content = await file.readAsString();
-    final dynamic decoded = jsonDecode(content);
+    final exercises = exercisesJson
+        .map((e) => Exercise.fromJson(e as Map<String, dynamic>))
+        .toList();
+    final sessions = sessionsJson
+        .map((s) => ExerciseSession.fromJson(s as Map<String, dynamic>))
+        .toList();
 
-    if (decoded is! Map<String, dynamic>) {
-      throw Exception('Ugyldig backup-fil: forventet JSON-objekt.');
-    }
-
-    final map = decoded;
-
-    // 3. Versjonssjekk
-    final dynamic versionRaw = map['version'];
-    final int version;
-    if (versionRaw == null) {
-      version = 1; // eldste format
-    } else if (versionRaw is int) {
-      version = versionRaw;
-    } else {
-      throw Exception('Ugyldig backup-fil: "version" må være et tall.');
-    }
-
-    if (version != 1) {
-      throw Exception(
-        'Backup-versjon $version støttes ikke av denne app-versjonen.',
-      );
-    }
-
-    // 4. Les øvelser
-    final dynamic exercisesRaw = map['exercises'];
-    if (exercisesRaw is! List) {
-      throw Exception('Ugyldig backup-fil: "exercises" må være en liste.');
-    }
-
-    final exercises = exercisesRaw.map<Exercise>((e) {
-      if (e is! Map<String, dynamic>) {
-        throw Exception(
-          'Ugyldig element i "exercises" – forventet JSON-objekt.',
-        );
-      }
-      return Exercise.fromJson(e);
-    }).toList();
-
-    // 5. Les økter
-    final dynamic sessionsRaw = map['sessions'];
-    if (sessionsRaw is! List) {
-      throw Exception('Ugyldig backup-fil: "sessions" må være en liste.');
-    }
-
-    final sessions = sessionsRaw.map<ExerciseSession>((s) {
-      if (s is! Map<String, dynamic>) {
-        throw Exception(
-          'Ugyldig element i "sessions" – forventet JSON-objekt.',
-        );
-      }
-      return ExerciseSession.fromJson(s);
-    }).toList();
-
-    // 6. Lagre – erstatt alt eksisterende innhold
+    // 4. Lagre inn i appens storage (overskriver alt eksisterende)
     await _storage.saveExercises(exercises);
     await _storage.saveSessions(sessions);
 

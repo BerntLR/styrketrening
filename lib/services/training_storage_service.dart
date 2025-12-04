@@ -14,6 +14,7 @@ class TrainingStorageService {
 
   static const String _exercisesKey = 'exercises';
   static const String _sessionsKey = 'sessions';
+  static const String _lastBackupKey = 'lastBackupDate';
 
   Future<SharedPreferences> get _prefs async {
     return SharedPreferences.getInstance();
@@ -136,9 +137,34 @@ class TrainingStorageService {
     return sessions.last;
   }
 
+  // -----------------------------
+  // Backup metadata
+  // -----------------------------
+
+  Future<DateTime?> getLastBackupDate() async {
+    final prefs = await _prefs;
+    final value = prefs.getString(_lastBackupKey);
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    try {
+      return DateTime.parse(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setLastBackupDate(DateTime date) async {
+    final prefs = await _prefs;
+    await prefs.setString(_lastBackupKey, date.toIso8601String());
+  }
+
+  // -----------------------------
+  // Convenience
+  // -----------------------------
 
   Future<List<Exercise>> getExercises() async {
     return loadExercises();
   }
-
 }
+
