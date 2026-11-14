@@ -43,8 +43,11 @@ class AppStrings {
   String get newExerciseTitle => 'New exercise';
   String get exerciseNameLabel => 'Exercise name';
 
-  String lastLine(String dateStr, int daysSince) =>
-      'Last: $dateStr ($daysSince days ago)';
+  String lastLine(String dateStr, int daysSince) => switch (daysSince) {
+        0 => 'Last: $dateStr (today)',
+        1 => 'Last: $dateStr (yesterday)',
+        _ => 'Last: $dateStr ($daysSince days ago)',
+      };
 
   String setsLine(String s1, String s2, String s3) =>
       'S1: $s1 | S2: $s2 | S3: $s3';
