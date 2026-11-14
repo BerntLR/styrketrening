@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
+import '../utils/formatting.dart';
 import '../widgets/watermark.dart';
 import 'exercise_detail_page.dart';
 import 'info_page.dart';
@@ -30,7 +31,7 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
   Future<void> _loadExercises() async {
     setState(() => _isLoading = true);
 
-    final exercises = await _storage.getExercises();
+    final exercises = await _storage.loadExercises();
     final lastSessions = <String, ExerciseSession?>{};
     for (final e in exercises) {
       lastSessions[e.id] = await _storage.getLastSessionForExercise(e.id);
@@ -46,18 +47,8 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     });
   }
 
-  String _formatDate(DateTime date) {
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
-
   String _formatSet(int index, ExerciseSession session) {
-    final set = session.sets
-        .where((s) => s.setIndex == index)
-        .cast<ExerciseSet?>()
-        .firstWhere((s) => s != null, orElse: () => null);
+    final set = session.sets.where((s) => s.setIndex == index).firstOrNull;
 
     if (set == null) return '–';
 
@@ -72,19 +63,12 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
       return Text(strings.noSessionsYet);
     }
 
-    final dateStr = _formatDate(last.date);
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final lastDay = DateTime(last.date.year, last.date.month, last.date.day);
-    final daysSince = today.difference(lastDay).inDays;
-
-    final s1 = _formatSet(1, last);
-    final s2 = _formatSet(2, last);
-    final s3 = _formatSet(3, last);
-
-    final line1 = strings.lastLine(dateStr, daysSince);
-    final line2 = strings.setsLine(s1, s2, s3, ready: false);
+    final line1 = strings.lastLine(formatDate(last.date), daysSince(last.date));
+    final line2 = strings.setsLine(
+      _formatSet(1, last),
+      _formatSet(2, last),
+      _formatSet(3, last),
+    );
 
     return Text('$line1\n$line2', style: const TextStyle(fontSize: 13));
   }
@@ -114,7 +98,6 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
   }
 
   Future<void> _showExerciseDialog({Exercise? exercise}) async {
-    final strings = AppStrings.of(context);
     final isEditing = exercise != null;
     final controller = TextEditingController(text: exercise?.name ?? '');
 
@@ -159,9 +142,6 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     }
 
     await _loadExercises();
-
-    // ignore: unnecessary_statements
-    strings;
   }
 
   void _openInfo() {
@@ -183,7 +163,6 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(strings.noExercisesYet, style: const TextStyle(fontSize: 16)),
-            const SizedBox(height: 8),
           ],
         ),
       );

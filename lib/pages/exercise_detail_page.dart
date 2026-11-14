@@ -1,8 +1,11 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
+import '../utils/formatting.dart';
 import 'exercise_history_page.dart';
 
 class ExerciseDetailPage extends StatefulWidget {
@@ -57,8 +60,6 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   void initState() {
     super.initState();
     _loadData();
-
-    _clearInputsForNewSession();
   }
 
   @override
@@ -75,93 +76,37 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   }
 
   Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    // If we came from HistoryPage with an existing session, set editing mode
-    if (widget.initialSession != null) {
-      _editingSession = widget.initialSession;
-
-      // Prefill controllers from the session we are editing
-      final sets = widget.initialSession!.sets;
-      for (int i = 0; i < 3; i++) {
-        if (i < sets.length) {
-          _weightControllers[i].text = sets[i].weightKg.toString();
-          _repsControllers[i].text = sets[i].reps.toString();
-        } else {
-          _weightControllers[i].text = '';
-          _repsControllers[i].text = '';
-        }
-      }
-    } else {
-      // New session: initially empty
-      for (int i = 0; i < 3; i++) {
-        _weightControllers[i].text = '';
-        _repsControllers[i].text = '';
+    // Editing an existing session: prefill from it.
+    // New session: keep the inputs empty (the last session is shown above).
+    final initial = widget.initialSession;
+    if (initial != null) {
+      _editingSession = initial;
+      for (int i = 0; i < 3 && i < initial.sets.length; i++) {
+        _weightControllers[i].text = initial.sets[i].weightKg.toString();
+        _repsControllers[i].text = initial.sets[i].reps.toString();
       }
     }
 
-    // Fetch last session for display
     final last = await _storage.getLastSessionForExercise(widget.exercise.id);
-
-    // If creating a new session and there is a last session, prefill from it
-    if (widget.initialSession == null && last != null) {
-      final sets = last.sets;
-      for (int i = 0; i < 3; i++) {
-        if (i < sets.length) {
-          _weightControllers[i].text = sets[i].weightKg.toString();
-          _repsControllers[i].text = sets[i].reps.toString();
-        } else {
-          _weightControllers[i].text = '';
-          _repsControllers[i].text = '';
-        }
-      }
-    }
+    if (!mounted) return;
 
     setState(() {
       _lastSession = last;
-      // BullPeak: keep inputs empty for new sessions (post-frame)
-      // We show history in the 'Last session' card, but keep input fields empty for NEW sessions.
-      if (!_isEditing) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          for (final c in _weightControllers) {
-            c.clear();
-          }
-          for (final c in _repsControllers) {
-            c.clear();
-          }
-        });
-      }
-
       _isLoading = false;
     });
   }
 
-  String _formatDate(DateTime date) {
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
-
-  double _calculateTotalVolume(ExerciseSession session) {
-    double total = 0;
-    for (final set in session.sets) {
-      total += set.weightKg * set.reps;
-    }
-    return total;
-  }
-
   Widget _buildLastSessionCard() {
+    final strings = AppStrings.of(context);
+
     if (_lastSession == null) {
-      return const Card(
-        margin: EdgeInsets.all(12),
+      return Card(
+        margin: const EdgeInsets.all(12),
         child: Padding(
-          padding: EdgeInsets.all(12),
+          padding: const EdgeInsets.all(12),
           child: Text(
-            'No previous session for this exercise yet.',
-            style: TextStyle(fontSize: 14),
+            strings.noPreviousSessionForExercise,
+            style: const TextStyle(fontSize: 14),
           ),
         ),
       );
@@ -176,12 +121,12 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Last session: ${_formatDate(last.date)}',
+              strings.lastSessionLabel(formatDate(last.date)),
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
-              'Total volume: ${_calculateTotalVolume(last).toStringAsFixed(0)} kg',
+              strings.totalVolumeLabel(last.totalVolumeKg.toStringAsFixed(0)),
               style: const TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 8),
@@ -189,7 +134,11 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 child: Text(
-                  'Set ${set.setIndex}: ${set.weightKg} kg x ${set.reps} reps',
+                  strings.setLine(
+                    set.setIndex,
+                    set.weightKg.toString(),
+                    set.reps,
+                  ),
                   style: const TextStyle(fontSize: 14),
                 ),
               ),
@@ -204,27 +153,24 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       return const SizedBox.shrink();
     }
 
-    final dateStr = _formatDate(_editingSession!.date);
+    final dateStr = formatDate(_editingSession!.date);
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       color: Colors.amber.withValues(alpha: 0.2),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Text(
-          'You are editing a previous session from $dateStr.\n'
-          'Saving will overwrite this session.',
+          AppStrings.of(context).editingBanner(dateStr),
           style: const TextStyle(fontSize: 14),
         ),
       ),
     );
   }
 
-  Widget _buildProgressionHint() {
-    return const SizedBox.shrink();
-  }
-
   /// Card for session settings (rest time and timer on/off)
   Widget _buildSessionSettingsCard() {
+    final strings = AppStrings.of(context);
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Padding(
@@ -232,17 +178,17 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Session settings',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Text(
+              strings.sessionSettings,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Rest time (minutes)',
-                    style: TextStyle(fontSize: 14),
+                    strings.restTimeMinutes,
+                    style: const TextStyle(fontSize: 14),
                   ),
                 ),
                 SizedBox(
@@ -250,7 +196,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
                   child: TextField(
                     controller: _pauseController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Minutes'),
+                    decoration: InputDecoration(labelText: strings.minutes),
                     onChanged: (value) {
                       final parsed = int.tryParse(value.trim()) ?? 0;
                       final sanitized = parsed < 0 ? 0 : parsed;
@@ -265,9 +211,9 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
             const SizedBox(height: 8),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Use rest timer',
-                style: TextStyle(fontSize: 14),
+              title: Text(
+                strings.useRestTimer,
+                style: const TextStyle(fontSize: 14),
               ),
               value: _useTimer,
               onChanged: (v) {
@@ -324,6 +270,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   /// Save (new or edited) session manually.
   /// This is called from the explicit "Save session" button only.
   Future<void> _saveSession() async {
+    final strings = AppStrings.of(context);
     final List<ExerciseSet> sets = [];
 
     for (int i = 0; i < 3; i++) {
@@ -348,7 +295,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Session updated')));
+      ).showSnackBar(SnackBar(content: Text(strings.sessionUpdated)));
       Navigator.of(context).pop(true);
     } else {
       // Create new session
@@ -360,28 +307,23 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       );
 
       await _storage.addSession(session);
-
-      setState(() {
-        _lastSession = session;
-      });
-
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Exercise completed and saved')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings.sessionSaved)));
 
       Navigator.of(context).pop(true);
     }
   }
 
   Future<void> _discardSessionWithConfirm() async {
-    // If absolutely nothing is filled, we can just pop without dialog if desired.
+    // If nothing is filled in, leave without asking.
     final hasAnyInput =
         _weightControllers.any((c) => c.text.trim().isNotEmpty) ||
         _repsControllers.any((c) => c.text.trim().isNotEmpty);
 
-    bool shouldAsk = hasAnyInput || _isEditing;
+    final shouldAsk = hasAnyInput || _isEditing;
 
     if (!shouldAsk) {
       _timer?.cancel();
@@ -391,22 +333,21 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       return;
     }
 
+    final strings = AppStrings.of(context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Discard session'),
-          content: const Text(
-            'Do you want to discard this session without saving?',
-          ),
+          title: Text(strings.discardSessionTitle),
+          content: Text(strings.discardSessionBody),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
+              child: Text(strings.cancel),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Discard'),
+              child: Text(strings.discard),
             ),
           ],
         );
@@ -425,6 +366,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   }
 
   Widget _buildSetRow(int index) {
+    final strings = AppStrings.of(context);
     final isCurrent = _useTimer && (_currentSet == index);
 
     return Container(
@@ -440,14 +382,14 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       ),
       child: Row(
         children: [
-          SizedBox(width: 50, child: Text('Set $index')),
+          SizedBox(width: 50, child: Text(strings.setLabel(index))),
           Expanded(
             child: TextField(
               controller: _weightControllers[index - 1],
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              decoration: const InputDecoration(labelText: 'kg'),
+              decoration: InputDecoration(labelText: strings.kg),
             ),
           ),
           const SizedBox(width: 12),
@@ -457,7 +399,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: false,
               ),
-              decoration: const InputDecoration(labelText: 'reps'),
+              decoration: InputDecoration(labelText: strings.repsLabel),
             ),
           ),
         ],
@@ -470,6 +412,8 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       return const SizedBox.shrink();
     }
 
+    final strings = AppStrings.of(context);
+
     return Card(
       margin: const EdgeInsets.all(12),
       child: Padding(
@@ -477,16 +421,16 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
         child: Column(
           children: [
             Text(
-              'Rest timer ($_pauseMinutes min)',
+              strings.restTimerTitle(_pauseMinutes),
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Text(
               _isTimerRunning
-                  ? '$_remainingSeconds sec'
+                  ? strings.timerRemainingSeconds(_remainingSeconds)
                   : (_currentSet <= 3
-                        ? 'Ready for set $_currentSet'
-                        : 'All sets done'),
+                        ? strings.timerReadyForSet(_currentSet)
+                        : strings.timerAllSetsDone),
               style: const TextStyle(fontSize: 22),
             ),
             const SizedBox(height: 12),
@@ -511,19 +455,15 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
                         if (totalSeconds > 0) {
                           _startTimer(totalSeconds);
                         }
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'All sets completed. Remember to save the session.',
-                              ),
-                            ),
-                          );
-                        }
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(strings.allSetsCompletedRememberSave),
+                          ),
+                        );
                       }
                     },
               icon: const Icon(Icons.timer),
-              label: const Text('Start rest'),
+              label: Text(strings.startRest),
             ),
           ],
         ),
@@ -532,6 +472,8 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   }
 
   Widget _buildActionButtons() {
+    final strings = AppStrings.of(context);
+
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Row(
@@ -540,29 +482,20 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
             child: ElevatedButton.icon(
               onPressed: _saveSession,
               icon: const Icon(Icons.check),
-              label: Text(_isEditing ? 'Save changes' : 'Save session'),
+              label: Text(
+                _isEditing ? strings.saveChanges : strings.saveSession,
+              ),
             ),
           ),
           const SizedBox(width: 12),
           TextButton.icon(
             onPressed: _discardSessionWithConfirm,
             icon: const Icon(Icons.close),
-            label: const Text('Discard'),
+            label: Text(strings.discard),
           ),
         ],
       ),
     );
-  }
-
-  void _clearInputsForNewSession() {
-    // BullPeak: no autofill for new sessions
-    if (_isEditing) return;
-    for (final c in _weightControllers) {
-      c.clear();
-    }
-    for (final c in _repsControllers) {
-      c.clear();
-    }
   }
 
   @override
@@ -577,7 +510,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
         centerTitle: true,
         actions: [
           IconButton(
-            tooltip: 'Full history',
+            tooltip: AppStrings.of(context).fullHistory,
             icon: const Icon(Icons.history),
             onPressed: () {
               Navigator.of(context).push(
@@ -594,7 +527,6 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
         children: [
           _buildEditingBanner(),
           _buildLastSessionCard(),
-          _buildProgressionHint(),
           _buildSessionSettingsCard(),
           for (int i = 1; i <= 3; i++) _buildSetRow(i),
           _buildTimerCard(),

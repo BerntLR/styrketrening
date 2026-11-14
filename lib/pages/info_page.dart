@@ -74,7 +74,7 @@ class _InfoPageState extends State<InfoPage> {
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppStrings.of(context).couldNotOpenEmail)),
+        SnackBar(content: Text(AppStrings.of(context).couldNotOpenLink)),
       );
     }
   }
@@ -155,17 +155,17 @@ class _InfoPageState extends State<InfoPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _tipButton(
-                      label: 'Donate NOK 29',
+                      label: strings.donateNok(29),
                       productId: TipJarService.tip29ProductId,
                     ),
                     const SizedBox(height: 8),
                     _tipButton(
-                      label: 'Donate NOK 59',
+                      label: strings.donateNok(59),
                       productId: TipJarService.tip59ProductId,
                     ),
                     const SizedBox(height: 8),
                     _tipButton(
-                      label: 'Donate NOK 99',
+                      label: strings.donateNok(99),
                       productId: TipJarService.tip99ProductId,
                     ),
                     if (_tipProducts.isEmpty) ...[
@@ -191,10 +191,7 @@ class _InfoPageState extends State<InfoPage> {
               Text(strings.infoBody),
 
               const SizedBox(height: 8),
-              Text(
-                "Swipe right to edit. Swipe left to delete.",
-                style: theme.textTheme.bodySmall,
-              ),
+              Text(strings.swipeHint, style: theme.textTheme.bodySmall),
 
               const SizedBox(height: 20),
               Text(
@@ -223,36 +220,36 @@ class _InfoPageState extends State<InfoPage> {
               ),
 
               const SizedBox(height: 20),
-              Text('Links', style: theme.textTheme.titleMedium),
+              Text(strings.linksTitle, style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _emailSupport,
                 icon: const Icon(Icons.mail_outline),
-                label: const Text('Send me a letter'),
+                label: Text(strings.sendLetter),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: () => _openUrl(AppLinks.website),
                 icon: const Icon(Icons.public),
-                label: const Text('Website'),
+                label: Text(strings.website),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: () => _openUrl(AppLinks.privacy),
                 icon: const Icon(Icons.privacy_tip),
-                label: const Text('Privacy policy'),
+                label: Text(strings.privacyPolicy),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: () => _openUrl(AppLinks.support),
                 icon: const Icon(Icons.support_agent),
-                label: const Text('Support'),
+                label: Text(strings.support),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: () => _openUrl(AppLinks.moreApps),
                 icon: const Icon(Icons.apps),
-                label: const Text('More from BullPeak'),
+                label: Text(strings.moreApps),
               ),
 
               const SizedBox(height: 20),

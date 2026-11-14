@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
+import '../utils/formatting.dart';
 import 'exercise_detail_page.dart';
 
 class ExerciseHistoryPage extends StatefulWidget {
@@ -36,30 +37,16 @@ class _ExerciseHistoryPageState extends State<ExerciseHistoryPage> {
     // Newest first
     sessions.sort((a, b) => b.date.compareTo(a.date));
 
+    if (!mounted) return;
     setState(() {
       _sessions = sessions;
       _isLoading = false;
     });
   }
 
-  String _formatDate(DateTime date) {
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
-
-  double _calculateTotalVolume(ExerciseSession session) {
-    double total = 0;
-    for (final set in session.sets) {
-      total += set.weightKg * set.reps;
-    }
-    return total;
-  }
-
   String _formatSets(ExerciseSession session) {
     if (session.sets.isEmpty) {
-      return 'No sets';
+      return AppStrings.of(context).noSets;
     }
 
     return session.sets
@@ -87,11 +74,12 @@ class _ExerciseHistoryPageState extends State<ExerciseHistoryPage> {
           context: context,
           builder: (context) {
             return AlertDialog(
-              title: const Text('Delete session'),
+              title: Text(strings.deleteSessionTitle),
               content: Text(
-                'Do you want to delete this session?\n\n'
-                'Date: ${_formatDate(session.date)}\n'
-                'Total volume: ${_calculateTotalVolume(session).toStringAsFixed(0)} kg',
+                strings.deleteSessionBody(
+                  formatDate(session.date),
+                  session.totalVolumeKg.toStringAsFixed(0),
+                ),
               ),
               actions: [
                 TextButton(
@@ -115,10 +103,10 @@ class _ExerciseHistoryPageState extends State<ExerciseHistoryPage> {
     }
 
     if (_sessions.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
-          'No sessions recorded yet for this exercise.',
-          style: TextStyle(fontSize: 14),
+          AppStrings.of(context).noSessionsForExercise,
+          style: const TextStyle(fontSize: 14),
         ),
       );
     }
@@ -129,8 +117,8 @@ class _ExerciseHistoryPageState extends State<ExerciseHistoryPage> {
         itemCount: _sessions.length,
         itemBuilder: (context, index) {
           final session = _sessions[index];
-          final dateStr = _formatDate(session.date);
-          final volumeStr = _calculateTotalVolume(session).toStringAsFixed(0);
+          final dateStr = formatDate(session.date);
+          final volumeStr = session.totalVolumeKg.toStringAsFixed(0);
           final setsStr = _formatSets(session);
 
           return Dismissible(
@@ -167,7 +155,9 @@ class _ExerciseHistoryPageState extends State<ExerciseHistoryPage> {
               await _loadSessions();
             },
             child: ListTile(
-              title: Text('$dateStr \u2013 $volumeStr kg'),
+              title: Text(
+                AppStrings.of(context).sessionTitle(dateStr, volumeStr),
+              ),
               subtitle: Text(setsStr),
               onTap: () => _editSession(session),
             ),

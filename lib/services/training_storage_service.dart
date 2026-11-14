@@ -39,8 +39,7 @@ class TrainingStorageService {
 
   Future<void> saveExercises(List<Exercise> exercises) async {
     final prefs = await _prefs;
-    final jsonString =
-        jsonEncode(exercises.map((e) => e.toJson()).toList());
+    final jsonString = jsonEncode(exercises.map((e) => e.toJson()).toList());
     await prefs.setString(_exercisesKey, jsonString);
   }
 
@@ -69,8 +68,7 @@ class TrainingStorageService {
 
     // Also remove sessions for this exercise
     final sessions = await loadSessions();
-    final filtered =
-        sessions.where((s) => s.exerciseId != id).toList();
+    final filtered = sessions.where((s) => s.exerciseId != id).toList();
     await saveSessions(filtered);
   }
 
@@ -93,8 +91,7 @@ class TrainingStorageService {
 
   Future<void> saveSessions(List<ExerciseSession> sessions) async {
     final prefs = await _prefs;
-    final jsonString =
-        jsonEncode(sessions.map((s) => s.toJson()).toList());
+    final jsonString = jsonEncode(sessions.map((s) => s.toJson()).toList());
     await prefs.setString(_sessionsKey, jsonString);
   }
 
@@ -122,14 +119,14 @@ class TrainingStorageService {
   }
 
   Future<List<ExerciseSession>> getSessionsForExercise(
-      String exerciseId) async {
+    String exerciseId,
+  ) async {
     final sessions = await loadSessions();
     return sessions.where((s) => s.exerciseId == exerciseId).toList()
       ..sort((a, b) => a.date.compareTo(b.date));
   }
 
-  Future<ExerciseSession?> getLastSessionForExercise(
-      String exerciseId) async {
+  Future<ExerciseSession?> getLastSessionForExercise(String exerciseId) async {
     final sessions = await getSessionsForExercise(exerciseId);
     if (sessions.isEmpty) {
       return null;
@@ -158,13 +155,4 @@ class TrainingStorageService {
     final prefs = await _prefs;
     await prefs.setString(_lastBackupKey, date.toIso8601String());
   }
-
-  // -----------------------------
-  // Convenience
-  // -----------------------------
-
-  Future<List<Exercise>> getExercises() async {
-    return loadExercises();
-  }
 }
-

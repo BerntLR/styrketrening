@@ -5,22 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/training_models.dart';
 import 'training_storage_service.dart';
 
 class BackupService {
   final TrainingStorageService _storage = TrainingStorageService();
-
-  static const Duration backupReminderInterval = Duration(days: 30);
-
-  Future<bool> shouldShowBackupReminder() async {
-    final last = await _storage.getLastBackupDate();
-    if (last == null) return true;
-
-    final now = DateTime.now();
-    final diff = now.difference(last);
-    return diff >= backupReminderInterval;
-  }
 
   Future<Directory> _backupDir() async {
     final docs = await getApplicationDocumentsDirectory();
@@ -32,6 +22,7 @@ class BackupService {
   }
 
   Future<void> exportBackup(BuildContext context) async {
+    final shareText = AppStrings.of(context).backupShareText;
     final box = context.findRenderObject() as RenderBox?;
     final origin = box != null
         ? (box.localToGlobal(Offset.zero) & box.size)
@@ -59,7 +50,7 @@ class BackupService {
 
     await Share.shareXFiles(
       [XFile(outFile.path)],
-      text: 'Exported training data backup.',
+      text: shareText,
       sharePositionOrigin: origin,
     );
 
