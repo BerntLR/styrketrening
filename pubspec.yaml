@@ -2,13 +2,15 @@ name: karo_strength_training
 description: "Karos Strength Training – a simple strength training log by Team BullPeak."
 publish_to: 'none'
 
-version: 1.0.6+2
+version: 1.0.7+3
 
 environment:
   sdk: ^3.9.0
 
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
 
   in_app_purchase: ^3.2.0

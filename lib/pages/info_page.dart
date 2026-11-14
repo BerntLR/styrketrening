@@ -106,11 +106,12 @@ class _InfoPageState extends State<InfoPage> {
     final ok = await _backup.importBackup();
     if (!mounted) return;
 
-    if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppStrings.of(context).dataImported)),
-      );
-    }
+    final strings = AppStrings.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? strings.dataImported : strings.importFailed),
+      ),
+    );
   }
 
   Future<void> _donate(String productId) async {
