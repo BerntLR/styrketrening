@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../widgets/watermark.dart';
+import '../l10n/app_strings.dart';
 
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
@@ -28,31 +30,25 @@ class _HistoryPageState extends State<HistoryPage> {
       _isLoading = true;
     });
 
-    // 1. Hent alle øvelser
+    // 1. Load all exercises
     final exercises = await _storage.loadExercises();
 
-    // 2. For hver øvelse: hent alle økter
+    // 2. For each exercise: load all sessions
     final List<_ExerciseHistory> result = [];
     for (final exercise in exercises) {
-      final sessions =
-          await _storage.getSessionsForExercise(exercise.id);
+      final sessions = await _storage.getSessionsForExercise(exercise.id);
 
       if (sessions.isEmpty) {
-        continue; // hopp over øvelser uten økter
+        continue; // skip exercises without sessions
       }
 
-      // sorter øktene nyeste først
+      // sort sessions newest first
       sessions.sort((a, b) => b.date.compareTo(a.date));
 
-      result.add(
-        _ExerciseHistory(
-          exercise: exercise,
-          sessions: sessions,
-        ),
-      );
+      result.add(_ExerciseHistory(exercise: exercise, sessions: sessions));
     }
 
-    // 3. Sorter øvelsene slik at den med nyeste økt totalt kommer øverst
+    // 3. Sort exercises so the one with the newest session is first
     result.sort(
       (a, b) => b.sessions.first.date.compareTo(a.sessions.first.date),
     );
@@ -82,7 +78,7 @@ class _HistoryPageState extends State<HistoryPage> {
     final exercise = item.exercise;
     final sessions = item.sessions;
 
-    // Vis kun de 3 siste øktene for å unngå gigantisk liste
+    // Show only the 3 latest sessions to avoid a huge list
     final visibleSessions = sessions.length <= 3
         ? sessions
         : sessions.sublist(0, 3);
@@ -98,29 +94,25 @@ class _HistoryPageState extends State<HistoryPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Tittel: navn på øvelse + dato for siste økt
+            // Title: exercise name + date of latest session
             Text(
-              '${exercise.name} – last: ${_formatDate(latest.date)}',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              AppStrings.of(
+                context,
+              ).historyCardTitle(exercise.name, _formatDate(latest.date)),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             Text(
-              'Showing $visibleCount of $totalCount sessions',
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
+              AppStrings.of(context).showingSessions(visibleCount, totalCount),
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 8),
 
-            // Liste over (maks) 3 nyeste økter
+            // List of (max) 3 newest sessions
             for (final session in visibleSessions)
               InkWell(
                 onTap: () async {
-                  // Åpne detaljside for å redigere akkurat denne økten
+                  // Open detail page to edit this specific session
                   await Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (context) => ExerciseDetailPage(
@@ -147,8 +139,7 @@ class _HistoryPageState extends State<HistoryPage> {
                       const SizedBox(height: 2),
                       for (final set in session.sets)
                         Padding(
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 1),
+                          padding: const EdgeInsets.symmetric(vertical: 1),
                           child: Text(
                             'Set ${set.setIndex}: '
                             '${set.weightKg} kg x ${set.reps} reps',
@@ -167,42 +158,42 @@ class _HistoryPageState extends State<HistoryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+
+    final content = _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : _items.isEmpty
+        ? Center(
+            child: Text(
+              strings.noSessionsYet,
+              style: const TextStyle(fontSize: 14),
+            ),
+          )
+        : RefreshIndicator(
+            onRefresh: _loadHistory,
+            child: ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: _items.length,
+              itemBuilder: (context, index) {
+                return _buildExerciseCard(_items[index]);
+              },
+            ),
+          );
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Training history'),
+        title: Text(AppStrings.of(context).history),
         centerTitle: true,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _items.isEmpty
-              ? const Center(
-                  child: Text(
-                    'No sessions recorded yet.',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadHistory,
-                  child: ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: _items.length,
-                    itemBuilder: (context, index) {
-                      return _buildExerciseCard(_items[index]);
-                    },
-                  ),
-                ),
+      body: Stack(children: [const Watermark(), content]),
     );
   }
 }
 
-/// Hjelpeklasse for å samle øvelse + alle øktene dens
+/// Helper to group an exercise with all its sessions
 class _ExerciseHistory {
   final Exercise exercise;
   final List<ExerciseSession> sessions;
 
-  _ExerciseHistory({
-    required this.exercise,
-    required this.sessions,
-  });
+  _ExerciseHistory({required this.exercise, required this.sessions});
 }
-

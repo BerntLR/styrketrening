@@ -1,8 +1,8 @@
-name: styrketrening
-description: "Karo's styrketrening – enkel og tydelig treningslogg i Karo-universet."
+name: karo_strength_training
+description: "Karo strength training log."
 publish_to: 'none'
 
-version: 1.0.2+5
+version: 1.0.5+1
 
 environment:
   sdk: ^3.9.0
@@ -11,12 +11,14 @@ dependencies:
   flutter:
     sdk: flutter
 
+
+  in_app_purchase: ^3.2.0
   shared_preferences: ^2.2.2
   path_provider: ^2.1.4
   cupertino_icons: ^1.0.8
   flutter_launcher_icons: ^0.14.4
   share_plus: ^10.0.2
-  file_picker: ^8.1.2
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
@@ -28,21 +30,21 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/icon/icon.png
-    - assets/splash/splash.png
-
+    - assets/watermark_light.png
+    - assets/watermark_dark.png
+    - assets/emblem.png
+    - assets/tegneserie_1.png
+    - assets/tegneserie_2.png
+    - assets/tegneserie_3.png
 flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/icon/icon.png"
-
 flutter_native_splash:
-  color: "#FFFFFF"
-  color_dark: "#000000"
-  image: assets/splash/splash.png
-  fullscreen: true
   android: true
   ios: true
-  android_12:
-    image: assets/splash/splash.png
+  web: false
+  color: "#000000"
+  color_dark: "#000000"
+  image: assets/karo.png
 

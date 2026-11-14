@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "styrketrening" "\0"
+            VALUE "FileDescription", "Karos Strength Training" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "styrketrening" "\0"
+            VALUE "InternalName", "karo_strength_training" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "styrketrening.exe" "\0"
-            VALUE "ProductName", "styrketrening" "\0"
+            VALUE "OriginalFilename", "karo_strength_training.exe" "\0"
+            VALUE "ProductName", "Karos Strength Training" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

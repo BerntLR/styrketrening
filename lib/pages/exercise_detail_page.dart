@@ -43,8 +43,9 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   // Pause settings and optional timer
   bool _useTimer = true;
   int _pauseMinutes = 1;
-  final TextEditingController _pauseController =
-      TextEditingController(text: '1');
+  final TextEditingController _pauseController = TextEditingController(
+    text: '1',
+  );
 
   Timer? _timer;
   int _remainingSeconds = 60;
@@ -56,6 +57,8 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   void initState() {
     super.initState();
     _loadData();
+
+    _clearInputsForNewSession();
   }
 
   @override
@@ -100,8 +103,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     }
 
     // Fetch last session for display
-    final last =
-        await _storage.getLastSessionForExercise(widget.exercise.id);
+    final last = await _storage.getLastSessionForExercise(widget.exercise.id);
 
     // If creating a new session and there is a last session, prefill from it
     if (widget.initialSession == null && last != null) {
@@ -119,6 +121,19 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
 
     setState(() {
       _lastSession = last;
+      // BullPeak: keep inputs empty for new sessions (post-frame)
+      // We show history in the 'Last session' card, but keep input fields empty for NEW sessions.
+      if (!_isEditing) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          for (final c in _weightControllers) {
+            c.clear();
+          }
+          for (final c in _repsControllers) {
+            c.clear();
+          }
+        });
+      }
+
       _isLoading = false;
     });
   }
@@ -128,12 +143,6 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     final m = date.month.toString().padLeft(2, '0');
     final d = date.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
-  }
-
-  bool _isReadyToIncrease(ExerciseSession? session) {
-    if (session == null) return false;
-    if (session.sets.length < 3) return false;
-    return session.sets.every((s) => s.reps >= 12);
   }
 
   double _calculateTotalVolume(ExerciseSession session) {
@@ -168,10 +177,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
           children: [
             Text(
               'Last session: ${_formatDate(last.date)}',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
@@ -201,7 +207,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     final dateStr = _formatDate(_editingSession!.date);
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      color: Colors.amber.withOpacity(0.2),
+      color: Colors.amber.withValues(alpha: 0.2),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Text(
@@ -214,22 +220,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   }
 
   Widget _buildProgressionHint() {
-    if (!_isReadyToIncrease(_lastSession)) {
-      return const SizedBox.shrink();
-    }
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      color: Colors.green.withOpacity(0.2),
-      child: const Padding(
-        padding: EdgeInsets.all(12),
-        child: Text(
-          'Last time you hit 12 reps on all 3 sets.\n'
-          'You can increase the weight for this exercise.',
-          style: TextStyle(fontSize: 14),
-        ),
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
   /// Card for session settings (rest time and timer on/off)
@@ -243,10 +234,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
           children: [
             const Text(
               'Session settings',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Row(
@@ -262,9 +250,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
                   child: TextField(
                     controller: _pauseController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Minutes',
-                    ),
+                    decoration: const InputDecoration(labelText: 'Minutes'),
                     onChanged: (value) {
                       final parsed = int.tryParse(value.trim()) ?? 0;
                       final sanitized = parsed < 0 ? 0 : parsed;
@@ -347,13 +333,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       final weight = double.tryParse(weightStr) ?? 0;
       final reps = int.tryParse(repsStr) ?? 0;
 
-      sets.add(
-        ExerciseSet(
-          setIndex: i + 1,
-          weightKg: weight,
-          reps: reps,
-        ),
-      );
+      sets.add(ExerciseSet(setIndex: i + 1, weightKg: weight, reps: reps));
     }
 
     if (_isEditing && _editingSession != null) {
@@ -366,9 +346,9 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       );
       await _storage.updateSession(updated);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Session updated')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Session updated')));
       Navigator.of(context).pop(true);
     } else {
       // Create new session
@@ -399,7 +379,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     // If absolutely nothing is filled, we can just pop without dialog if desired.
     final hasAnyInput =
         _weightControllers.any((c) => c.text.trim().isNotEmpty) ||
-            _repsControllers.any((c) => c.text.trim().isNotEmpty);
+        _repsControllers.any((c) => c.text.trim().isNotEmpty);
 
     bool shouldAsk = hasAnyInput || _isEditing;
 
@@ -451,7 +431,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       decoration: BoxDecoration(
-        color: isCurrent ? Colors.blue.withOpacity(0.1) : Colors.black26,
+        color: isCurrent ? Colors.blue.withValues(alpha: 0.1) : Colors.black26,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isCurrent ? Colors.blue : Colors.grey,
@@ -464,8 +444,9 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
           Expanded(
             child: TextField(
               controller: _weightControllers[index - 1],
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(labelText: 'kg'),
             ),
           ),
@@ -473,8 +454,9 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
           Expanded(
             child: TextField(
               controller: _repsControllers[index - 1],
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: false),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: false,
+              ),
               decoration: const InputDecoration(labelText: 'reps'),
             ),
           ),
@@ -495,7 +477,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
         child: Column(
           children: [
             Text(
-              'Rest timer (${_pauseMinutes} min)',
+              'Rest timer ($_pauseMinutes min)',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
@@ -503,8 +485,8 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
               _isTimerRunning
                   ? '$_remainingSeconds sec'
                   : (_currentSet <= 3
-                      ? 'Ready for set $_currentSet'
-                      : 'All sets done'),
+                        ? 'Ready for set $_currentSet'
+                        : 'All sets done'),
               style: const TextStyle(fontSize: 22),
             ),
             const SizedBox(height: 12),
@@ -512,8 +494,9 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
               onPressed: _isTimerRunning
                   ? null
                   : () {
-                      final totalSeconds =
-                          _pauseMinutes <= 0 ? 0 : _pauseMinutes * 60;
+                      final totalSeconds = _pauseMinutes <= 0
+                          ? 0
+                          : _pauseMinutes * 60;
 
                       // Just handle rest between sets; saving is manual now.
                       if (_currentSet < 3) {
@@ -571,12 +554,21 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
+  void _clearInputsForNewSession() {
+    // BullPeak: no autofill for new sessions
+    if (_isEditing) return;
+    for (final c in _weightControllers) {
+      c.clear();
+    }
+    for (final c in _repsControllers) {
+      c.clear();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(

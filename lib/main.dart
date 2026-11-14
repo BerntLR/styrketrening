@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
 
+import 'l10n/app_strings.dart';
+
+import 'intro/intro_gate.dart';
 import 'pages/exercise_list_page.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // --- Delay for splashscreen ---
-  await Future.delayed(const Duration(seconds: 2));
-
   runApp(const StyrketreningApp());
 }
 
@@ -18,14 +16,55 @@ class StyrketreningApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'styrketrening',
+      onGenerateTitle: (context) {
+        final strings = AppStrings.of(context);
+        return strings.appName;
+      },
       debugShowCheckedModeBanner: false,
+      themeMode: ThemeMode.system,
       theme: ThemeData(
         useMaterial3: true,
-        colorSchemeSeed: Colors.blue,
-        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.light,
+        ),
+        scaffoldBackgroundColor: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.light,
+        ).surface,
+        appBarTheme: AppBarTheme(
+          backgroundColor: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.light,
+          ).surface,
+          foregroundColor: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.light,
+          ).onSurface,
+        ),
       ),
-      home: const ExerciseListPage(),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.dark,
+        ),
+        scaffoldBackgroundColor: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.dark,
+        ).surface,
+        appBarTheme: AppBarTheme(
+          backgroundColor: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.dark,
+          ).surface,
+          foregroundColor: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.dark,
+          ).onSurface,
+        ),
+      ),
+      home: IntroGate(child: const ExerciseListPage()),
     );
   }
 }
