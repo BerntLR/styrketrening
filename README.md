@@ -1,7 +1,7 @@
-# Karos Strength Training
+# Karos Strength
 
 A simple strength training log by Team BullPeak, part of the Karo app family.
-Published on the App Store as **BullPeak Styrketrening** (id6755542972).
+Published on the App Store as **Karos Strength** (id6755542972).
 
 ## Features
 

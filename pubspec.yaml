@@ -1,8 +1,8 @@
 name: karo_strength_training
-description: "Karos Strength Training – a simple strength training log by Team BullPeak."
+description: "Karos Strength – a simple strength training log by Team BullPeak."
 publish_to: 'none'
 
-version: 1.0.7+3
+version: 1.0.7+4
 
 environment:
   sdk: ^3.9.0

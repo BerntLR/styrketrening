@@ -26,7 +26,7 @@ class AppStrings {
   // General
   // -----------------------------
 
-  String get appName => 'Karos Strength Training';
+  String get appName => 'Karos Strength';
   String get cancel => _t('Cancel', 'Avbryt');
   String get delete => _t('Delete', 'Slett');
   String get save => _t('Save', 'Lagre');
