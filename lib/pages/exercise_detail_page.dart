@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/training_models.dart';
+import '../services/rest_alert_service.dart';
 import '../services/training_storage_service.dart';
 import '../utils/formatting.dart';
 import 'exercise_history_page.dart';
@@ -51,6 +53,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   );
 
   Timer? _timer;
+  DateTime? _restEnd;
   int _remainingSeconds = 60;
   bool _isTimerRunning = false;
 
@@ -59,12 +62,29 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   @override
   void initState() {
     super.initState();
+    for (final c in [..._weightControllers, ..._repsControllers]) {
+      c.addListener(_onInputChanged);
+    }
     _loadData();
+  }
+
+  bool get _hasAnyInput =>
+      _weightControllers.any((c) => c.text.trim().isNotEmpty) ||
+      _repsControllers.any((c) => c.text.trim().isNotEmpty);
+
+  bool _hadInput = false;
+
+  // Rebuild only when "has input" flips, so the back-swipe guard is current.
+  void _onInputChanged() {
+    final has = _hasAnyInput;
+    if (has != _hadInput && mounted) {
+      setState(() => _hadInput = has);
+    }
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _stopTimer();
     for (final c in _weightControllers) {
       c.dispose();
     }
@@ -82,7 +102,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     if (initial != null) {
       _editingSession = initial;
       for (int i = 0; i < 3 && i < initial.sets.length; i++) {
-        _weightControllers[i].text = initial.sets[i].weightKg.toString();
+        _weightControllers[i].text = formatWeight(initial.sets[i].weightKg);
         _repsControllers[i].text = initial.sets[i].reps.toString();
       }
     }
@@ -136,7 +156,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
                 child: Text(
                   strings.setLine(
                     set.setIndex,
-                    set.weightKg.toString(),
+                    formatWeight(set.weightKg),
                     set.reps,
                   ),
                   style: const TextStyle(fontSize: 14),
@@ -221,8 +241,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
                   _useTimer = v;
                   if (!v) {
                     // reset timer if we turn it off
-                    _timer?.cancel();
-                    _isTimerRunning = false;
+                    _stopTimer();
                     _remainingSeconds = 0;
                     _currentSet = 1;
                   }
@@ -235,8 +254,10 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
     );
   }
 
-  /// Start countdown with given number of seconds
-  void _startTimer(int seconds) {
+  /// Starts the rest countdown. The time left is computed from the end time,
+  /// so the timer is right again after the screen has been locked, and an
+  /// alert is planned so the user hears it even with the phone in a pocket.
+  void _startTimer(int seconds, {required int nextSet}) {
     if (_isTimerRunning) return;
     if (seconds <= 0) {
       setState(() {
@@ -246,25 +267,53 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       return;
     }
 
+    final end = DateTime.now().add(Duration(seconds: seconds));
+    _restEnd = end;
     setState(() {
       _isTimerRunning = true;
       _remainingSeconds = seconds;
     });
 
+    final strings = AppStrings.of(context);
+    RestAlertService.instance.schedule(
+      end,
+      title: strings.restOverTitle,
+      body: nextSet <= 3
+          ? strings.timerReadyForSet(nextSet)
+          : strings.allSetsCompletedRememberSave,
+    );
+
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_remainingSeconds == 0) {
+    _timer = Timer.periodic(const Duration(milliseconds: 250), (timer) {
+      if (!mounted) {
         timer.cancel();
-        setState(() {
-          _isTimerRunning = false;
-        });
         return;
       }
-
-      setState(() {
-        _remainingSeconds--;
-      });
+      final left = _restEnd == null
+          ? 0
+          : (_restEnd!.difference(DateTime.now()).inMilliseconds / 1000).ceil();
+      if (left <= 0) {
+        timer.cancel();
+        _restEnd = null;
+        setState(() {
+          _isTimerRunning = false;
+          _remainingSeconds = 0;
+        });
+        HapticFeedback.heavyImpact();
+        SystemSound.play(SystemSoundType.alert);
+        return;
+      }
+      if (left != _remainingSeconds) {
+        setState(() => _remainingSeconds = left);
+      }
     });
+  }
+
+  void _stopTimer() {
+    _timer?.cancel();
+    _restEnd = null;
+    _isTimerRunning = false;
+    RestAlertService.instance.cancel();
   }
 
   /// Save (new or edited) session manually.
@@ -277,10 +326,26 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       final weightStr = _weightControllers[i].text.trim();
       final repsStr = _repsControllers[i].text.trim();
 
-      final weight = double.tryParse(weightStr) ?? 0;
-      final reps = int.tryParse(repsStr) ?? 0;
+      // A set with nothing filled in is skipped, not saved as 0 kg x 0.
+      if (weightStr.isEmpty && repsStr.isEmpty) continue;
+
+      final weight = weightStr.isEmpty ? 0.0 : parseWeight(weightStr);
+      final reps = parseReps(repsStr);
+      if (weight == null || reps == null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(strings.invalidSet(i + 1))));
+        return;
+      }
 
       sets.add(ExerciseSet(setIndex: i + 1, weightKg: weight, reps: reps));
+    }
+
+    if (sets.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(strings.noSetsEntered)));
+      return;
     }
 
     if (_isEditing && _editingSession != null) {
@@ -319,15 +384,10 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
 
   Future<void> _discardSessionWithConfirm() async {
     // If nothing is filled in, leave without asking.
-    final hasAnyInput =
-        _weightControllers.any((c) => c.text.trim().isNotEmpty) ||
-        _repsControllers.any((c) => c.text.trim().isNotEmpty);
-
-    final shouldAsk = hasAnyInput || _isEditing;
+    final shouldAsk = _hasAnyInput || _isEditing;
 
     if (!shouldAsk) {
-      _timer?.cancel();
-      _isTimerRunning = false;
+      _stopTimer();
       if (!mounted) return;
       Navigator.of(context).pop(false);
       return;
@@ -356,8 +416,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
 
     if (confirm != true) return;
 
-    _timer?.cancel();
-    _isTimerRunning = false;
+    _stopTimer();
     _remainingSeconds = 0;
     _currentSet = 1;
 
@@ -368,15 +427,18 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   Widget _buildSetRow(int index) {
     final strings = AppStrings.of(context);
     final isCurrent = _useTimer && (_currentSet == index);
+    final scheme = Theme.of(context).colorScheme;
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       decoration: BoxDecoration(
-        color: isCurrent ? Colors.blue.withValues(alpha: 0.1) : Colors.black26,
+        color: isCurrent
+            ? scheme.primaryContainer.withValues(alpha: 0.5)
+            : scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isCurrent ? Colors.blue : Colors.grey,
+          color: isCurrent ? scheme.primary : scheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -445,7 +507,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
                       // Just handle rest between sets; saving is manual now.
                       if (_currentSet < 3) {
                         if (totalSeconds > 0) {
-                          _startTimer(totalSeconds);
+                          _startTimer(totalSeconds, nextSet: _currentSet + 1);
                         }
                         setState(() {
                           _currentSet++;
@@ -453,7 +515,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
                       } else {
                         // All sets done; optional rest but no auto-save
                         if (totalSeconds > 0) {
-                          _startTimer(totalSeconds);
+                          _startTimer(totalSeconds, nextSet: 4);
                         }
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -504,34 +566,47 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.exercise.name),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            tooltip: AppStrings.of(context).fullHistory,
-            icon: const Icon(Icons.history),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) =>
-                      ExerciseHistoryPage(exercise: widget.exercise),
-                ),
-              );
-            },
+    // Leaving with unsaved input (back button or swipe) asks first.
+    return PopScope(
+      canPop: !(_hasAnyInput || _isEditing),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _discardSessionWithConfirm();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(widget.exercise.name),
+          centerTitle: true,
+          actions: [
+            IconButton(
+              tooltip: AppStrings.of(context).fullHistory,
+              icon: const Icon(Icons.history),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        ExerciseHistoryPage(exercise: widget.exercise),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        body: GestureDetector(
+          // Tap outside a field to close the keyboard.
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: ListView(
+            // Number pads have no Done key: drag the list to close the keyboard.
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            children: [
+              _buildEditingBanner(),
+              _buildLastSessionCard(),
+              _buildSessionSettingsCard(),
+              for (int i = 1; i <= 3; i++) _buildSetRow(i),
+              _buildTimerCard(),
+              _buildActionButtons(),
+            ],
           ),
-        ],
-      ),
-      body: ListView(
-        children: [
-          _buildEditingBanner(),
-          _buildLastSessionCard(),
-          _buildSessionSettingsCard(),
-          for (int i = 1; i <= 3; i++) _buildSetRow(i),
-          _buildTimerCard(),
-          _buildActionButtons(),
-        ],
+        ),
       ),
     );
   }

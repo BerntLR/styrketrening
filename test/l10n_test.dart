@@ -14,7 +14,9 @@ void main() {
   test('Texts differ by language', () {
     expect(AppStrings.english.newExercise, 'New exercise');
     expect(AppStrings.norwegian.newExercise, 'Ny øvelse');
-    expect(AppStrings.norwegian.lastLine('2026-11-14', 1),
-        'Sist: 2026-11-14 (i går)');
+    expect(
+      AppStrings.norwegian.lastLine('2026-11-14', 1),
+      'Sist: 2026-11-14 (i går)',
+    );
   });
 }

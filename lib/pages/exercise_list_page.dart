@@ -4,6 +4,7 @@ import '../l10n/app_strings.dart';
 import '../models/training_models.dart';
 import '../services/training_storage_service.dart';
 import '../utils/formatting.dart';
+import '../widgets/swipe_tile.dart';
 import '../widgets/watermark.dart';
 import 'exercise_detail_page.dart';
 import 'info_page.dart';
@@ -52,7 +53,7 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
 
     if (set == null) return '–';
 
-    return '${set.weightKg} kg x ${set.reps}';
+    return '${formatWeight(set.weightKg)} kg x ${set.reps}';
   }
 
   Widget _buildSubtitle(Exercise exercise) {
@@ -73,28 +74,15 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     return Text('$line1\n$line2', style: const TextStyle(fontSize: 13));
   }
 
-  Future<bool> _confirmDeleteExerciseDialog(Exercise exercise) async {
-    return (await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            final strings2 = AppStrings.of(context);
-            return AlertDialog(
-              title: Text(strings2.deleteExerciseTitle),
-              content: Text(strings2.deleteExerciseConfirm(exercise.name)),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: Text(strings2.cancel),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: Text(strings2.delete),
-                ),
-              ],
-            );
-          },
-        )) ==
-        true;
+  Future<bool> _confirmDeleteExerciseDialog(Exercise exercise) {
+    final strings = AppStrings.of(context);
+    return confirmDelete(
+      context,
+      title: strings.deleteExerciseTitle,
+      message: strings.deleteExerciseConfirm(exercise.name),
+      cancel: strings.cancel,
+      confirm: strings.delete,
+    );
   }
 
   Future<void> _showExerciseDialog({Exercise? exercise}) async {
@@ -144,10 +132,12 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     await _loadExercises();
   }
 
-  void _openInfo() {
-    Navigator.of(
+  Future<void> _openInfo() async {
+    await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (context) => const InfoPage()));
+    // An import on the Info page may have replaced all data.
+    if (mounted) await _loadExercises();
   }
 
   Widget _buildBody() {
@@ -171,44 +161,19 @@ class _ExerciseListPageState extends State<ExerciseListPage> {
     return RefreshIndicator(
       onRefresh: _loadExercises,
       child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
         itemCount: _exercises.length,
         itemBuilder: (context, index) {
           final exercise = _exercises[index];
 
-          return Dismissible(
-            key: ValueKey(exercise.id),
-            direction: DismissDirection.horizontal,
-            background: Container(
-              color: Colors.green,
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: const Icon(Icons.edit, color: Colors.white),
-            ),
-            secondaryBackground: Container(
-              color: Colors.red,
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: const Icon(Icons.delete, color: Colors.white),
-            ),
-            confirmDismiss: (direction) async {
-              if (direction == DismissDirection.startToEnd) {
-                // Swipe right = edit
-                await _showExerciseDialog(exercise: exercise);
-                return false;
-              }
-
-              if (direction == DismissDirection.endToStart) {
-                // Swipe left = delete (must confirm)
-                return _confirmDeleteExerciseDialog(exercise);
-              }
-
-              return false;
-            },
-            onDismissed: (direction) async {
-              if (direction != DismissDirection.endToStart) return;
+          return SwipeTile(
+            id: exercise.id,
+            onEdit: () => _showExerciseDialog(exercise: exercise),
+            onDelete: () async {
+              if (!await _confirmDeleteExerciseDialog(exercise)) return false;
               await _storage.deleteExercise(exercise.id);
-              if (!mounted) return;
-              await _loadExercises();
+              if (mounted) await _loadExercises();
+              return true;
             },
             child: ListTile(
               leading: const Icon(Icons.fitness_center),

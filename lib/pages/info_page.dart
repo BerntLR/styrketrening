@@ -10,9 +10,9 @@ import '../services/backup_service.dart';
 import '../services/tipjar_service.dart';
 import '../widgets/watermark.dart';
 
+/// Info page, built from the Karo standard template
+/// (_karo_standard/maler/lib/info_page.dart) plus the backup section.
 class InfoPage extends StatefulWidget {
-  static const String supportEmail = 'post@teambullpeak.com';
-
   const InfoPage({super.key});
 
   @override
@@ -20,13 +20,13 @@ class InfoPage extends StatefulWidget {
 }
 
 class _InfoPageState extends State<InfoPage> {
-  final BackupService _backup = BackupService();
   final TipJarService _tipjar = TipJarService();
+  final BackupService _backup = BackupService();
+  final GlobalKey _exportKey = GlobalKey();
 
   StreamSubscription<List<PurchaseDetails>>? _sub;
   bool _iapAvailable = false;
   bool _loadingTips = true;
-
   Map<String, ProductDetails> _tipProducts = <String, ProductDetails>{};
 
   @override
@@ -36,31 +36,29 @@ class _InfoPageState extends State<InfoPage> {
   }
 
   Future<void> _initIap() async {
-    _iapAvailable = await _tipjar.isAvailable();
-
-    if (_iapAvailable) {
-      _sub = _tipjar.purchaseStream().listen((purchases) async {
-        for (final p in purchases) {
-          await _tipjar.completeIfNeeded(p);
-          if (!mounted) continue;
-
-          if (p.status == PurchaseStatus.purchased) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(AppStrings.of(context).thankYouForSupport),
-              ),
-            );
+    try {
+      _iapAvailable = await _tipjar.isAvailable();
+      if (_iapAvailable) {
+        _sub = _tipjar.purchaseStream().listen((purchases) async {
+          for (final p in purchases) {
+            await _tipjar.completeIfNeeded(p);
+            if (!mounted) continue;
+            if (p.status == PurchaseStatus.purchased) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(AppStrings.of(context).thankYouForSupport),
+                ),
+              );
+            }
           }
-        }
-      });
-
-      _tipProducts = await _tipjar.loadTipProducts();
+        });
+        _tipProducts = await _tipjar.loadTipProducts();
+      }
+    } catch (_) {
+      _iapAvailable = false;
     }
-
     if (!mounted) return;
-    setState(() {
-      _loadingTips = false;
-    });
+    setState(() => _loadingTips = false);
   }
 
   @override
@@ -70,8 +68,10 @@ class _InfoPageState extends State<InfoPage> {
   }
 
   Future<void> _openUrl(String url) async {
-    final uri = Uri.parse(url);
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AppStrings.of(context).couldNotOpenLink)),
@@ -82,10 +82,9 @@ class _InfoPageState extends State<InfoPage> {
   Future<void> _emailSupport() async {
     final uri = Uri(
       scheme: 'mailto',
-      path: InfoPage.supportEmail,
-      queryParameters: {'subject': AppStrings.of(context).appName},
+      path: AppLinks.email,
+      query: 'subject=${Uri.encodeComponent(AppStrings.of(context).appName)}',
     );
-
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -94,46 +93,115 @@ class _InfoPageState extends State<InfoPage> {
     }
   }
 
-  Future<void> _exportBackup() async {
-    await _backup.exportBackup(context);
+  void _snack(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(AppStrings.of(context).backupExported)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  /// Share sheet anchor: the export button (iOS needs one, also on iPhone).
+  Rect _shareOrigin() {
+    final box = _exportKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      return box.localToGlobal(Offset.zero) & box.size;
+    }
+    final size = MediaQuery.of(context).size;
+    return Rect.fromLTWH(size.width / 2, size.height / 2, 1, 1);
+  }
+
+  Future<void> _exportBackup() async {
+    final s = AppStrings.of(context);
+    final origin = _shareOrigin();
+    try {
+      final ok = await _backup.exportBackup(
+        shareOrigin: origin,
+        dialogTitle: s.exportData,
+      );
+      if (ok) _snack(s.backupExported);
+    } catch (_) {
+      _snack(s.couldNotExport);
+    }
   }
 
   Future<void> _importBackup() async {
-    final ok = await _backup.importBackup();
-    if (!mounted) return;
-
-    final strings = AppStrings.of(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(ok ? strings.dataImported : strings.importFailed),
+    final s = AppStrings.of(context);
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(s.importData),
+        content: Text(s.importConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: Text(s.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: Text(s.importData),
+          ),
+        ],
       ),
     );
+    if (go != true) return;
+
+    BackupData? data;
+    try {
+      data = await _backup.pickBackup();
+    } catch (_) {
+      _snack(s.importFailed);
+      return;
+    }
+    if (data == null) return; // cancelled
+    try {
+      await _backup.restore(data);
+      _snack(s.importDone);
+    } catch (_) {
+      _snack(s.importFailed);
+    }
   }
 
   Future<void> _donate(String productId) async {
     final p = _tipProducts[productId];
-    if (p == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppStrings.of(context).tipNotAvailable)),
-      );
-      return;
-    }
+    if (p == null) return;
     await _tipjar.buyTip(p);
   }
 
-  Widget _tipButton({required String label, required String productId}) {
+  Widget _tipButton(String label, String productId) {
     final enabled = _iapAvailable && _tipProducts.containsKey(productId);
-
+    final price = _tipProducts[productId]?.price;
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
         onPressed: enabled ? () => _donate(productId) : null,
         icon: const Icon(Icons.favorite),
-        label: Text(label),
+        label: Text(price == null ? label : '$label ($price)'),
+      ),
+    );
+  }
+
+  Widget _bullet(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text)),
+        ],
+      ),
+    );
+  }
+
+  Widget _link(IconData icon, String label, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: onTap,
+          icon: Icon(icon),
+          label: Text(label),
+        ),
       ),
     );
   }
@@ -141,72 +209,58 @@ class _InfoPageState extends State<InfoPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final strings = AppStrings.of(context);
+    final s = AppStrings.of(context);
 
-    final tipSection = _loadingTips
-        ? const Center(
-            child: Padding(
-              padding: EdgeInsets.all(8),
-              child: CircularProgressIndicator(),
-            ),
-          )
-        : (!_iapAvailable
-              ? Text(strings.tipNotAvailable, style: theme.textTheme.bodySmall)
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _tipButton(
-                      label: strings.donateNok(29),
-                      productId: TipJarService.tip29ProductId,
-                    ),
-                    const SizedBox(height: 8),
-                    _tipButton(
-                      label: strings.donateNok(59),
-                      productId: TipJarService.tip59ProductId,
-                    ),
-                    const SizedBox(height: 8),
-                    _tipButton(
-                      label: strings.donateNok(99),
-                      productId: TipJarService.tip99ProductId,
-                    ),
-                    if (_tipProducts.isEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        strings.tipNotAvailable,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ],
-                  ],
-                ));
+    final Widget tipSection;
+    if (_loadingTips) {
+      tipSection = const Center(
+        child: Padding(
+          padding: EdgeInsets.all(8),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    } else {
+      tipSection = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _tipButton(s.donateNok(29), TipJarService.tip29ProductId),
+          const SizedBox(height: 8),
+          _tipButton(s.donateNok(59), TipJarService.tip59ProductId),
+          const SizedBox(height: 8),
+          _tipButton(s.donateNok(99), TipJarService.tip99ProductId),
+          if (!_iapAvailable || _tipProducts.isEmpty) ...[
+            const SizedBox(height: 8),
+            Text(s.tipNotAvailable, style: theme.textTheme.bodySmall),
+          ],
+        ],
+      );
+    }
 
     return Scaffold(
-      appBar: AppBar(title: Text(strings.info), centerTitle: true),
+      appBar: AppBar(title: Text(s.info), centerTitle: true),
       body: Stack(
         children: [
           const Watermark(),
           ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Text(strings.appName, style: theme.textTheme.headlineSmall),
+              Text(s.appName, style: theme.textTheme.headlineSmall),
               const SizedBox(height: 12),
-              Text(strings.infoBody),
-
-              const SizedBox(height: 8),
-              Text(strings.swipeHint, style: theme.textTheme.bodySmall),
-
+              Text(s.infoBody),
+              const SizedBox(height: 12),
+              _bullet(Icons.swipe, s.swipeHint),
+              _bullet(Icons.timer_outlined, s.restTimerHint),
               const SizedBox(height: 20),
-              Text(
-                strings.backupSectionTitle,
-                style: theme.textTheme.titleMedium,
-              ),
+              Text(s.backupTitle, style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
+                      key: _exportKey,
                       onPressed: _exportBackup,
                       icon: const Icon(Icons.upload_file),
-                      label: Text(strings.exportData),
+                      label: Text(s.exportData),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -214,49 +268,32 @@ class _InfoPageState extends State<InfoPage> {
                     child: OutlinedButton.icon(
                       onPressed: _importBackup,
                       icon: const Icon(Icons.download),
-                      label: Text(strings.importData),
+                      label: Text(s.importData),
                     ),
                   ),
                 ],
               ),
-
               const SizedBox(height: 20),
-              Text(strings.linksTitle, style: theme.textTheme.titleMedium),
+              Text(s.linksTitle, style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _emailSupport,
-                icon: const Icon(Icons.mail_outline),
-                label: Text(strings.sendLetter),
+              _link(Icons.mail_outline, s.sendLetter, _emailSupport),
+              _link(Icons.public, s.website, () => _openUrl(AppLinks.website)),
+              _link(
+                Icons.privacy_tip,
+                s.privacyPolicy,
+                () => _openUrl(AppLinks.privacy),
               ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () => _openUrl(AppLinks.website),
-                icon: const Icon(Icons.public),
-                label: Text(strings.website),
+              _link(
+                Icons.support_agent,
+                s.support,
+                () => _openUrl(AppLinks.support),
               ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () => _openUrl(AppLinks.privacy),
-                icon: const Icon(Icons.privacy_tip),
-                label: Text(strings.privacyPolicy),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () => _openUrl(AppLinks.support),
-                icon: const Icon(Icons.support_agent),
-                label: Text(strings.support),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () => _openUrl(AppLinks.moreApps),
-                icon: const Icon(Icons.apps),
-                label: Text(strings.moreApps),
-              ),
-
-              const SizedBox(height: 20),
-              Text(strings.tipTitle, style: theme.textTheme.titleMedium),
+              _link(Icons.apps, s.moreApps, () => _openUrl(AppLinks.moreApps)),
+              const SizedBox(height: 12),
+              Text(s.tipTitle, style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
               tipSection,
+              const SizedBox(height: 24),
             ],
           ),
         ],

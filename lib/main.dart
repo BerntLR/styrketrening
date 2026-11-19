@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:bullpeak_intro/bullpeak_intro.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
-import 'intro/intro_gate.dart';
 import 'l10n/app_strings.dart';
 import 'pages/exercise_list_page.dart';
 
@@ -47,7 +47,7 @@ class StyrketreningApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
-      home: const IntroGate(child: ExerciseListPage()),
+      home: const BullPeakIntro(next: ExerciseListPage()),
     );
   }
 }
