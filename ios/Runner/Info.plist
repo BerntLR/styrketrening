@@ -31,6 +31,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Karos Strength does not use the camera. The file picker used for backup import includes this option.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Karos Strength does not use your photos. The file picker used for backup import includes this option.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
